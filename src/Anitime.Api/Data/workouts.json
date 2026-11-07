@@ -1,0 +1,123 @@
+[
+  {
+    "slug": "leg-day",
+    "title": "Leg Day",
+    "description": "A complete lower-body session hitting quads, hamstrings, glutes and calves. No equipment needed.",
+    "category": "Lower Body",
+    "level": "intermediate",
+    "durationMinutes": 20,
+    "youTubeVideoId": "X0xt0fYTZv8",
+    "targetMuscles": ["quadriceps", "hamstrings", "glutes", "calves"],
+    "displayOrder": 1
+  },
+  {
+    "slug": "beginner-leg-and-glutes",
+    "title": "Beginner Leg & Glutes",
+    "description": "Gentle lower-body routine with breaks — booty, thighs and hamstrings for beginners.",
+    "category": "Lower Body",
+    "level": "beginner",
+    "durationMinutes": 10,
+    "youTubeVideoId": "nG69wuXHwxg",
+    "targetMuscles": ["glutes", "hamstrings", "quadriceps", "adductors", "abductors"],
+    "displayOrder": 2
+  },
+  {
+    "slug": "full-body-strength",
+    "title": "Full Body Strength & Toning",
+    "description": "Total-body strength and toning circuit covering every major muscle group.",
+    "category": "Full Body",
+    "level": "intermediate",
+    "durationMinutes": 30,
+    "youTubeVideoId": "iX2FUPgd60A",
+    "targetMuscles": ["chest", "quadriceps", "hamstrings", "glutes", "shoulders", "lats"],
+    "displayOrder": 3
+  },
+  {
+    "slug": "full-body-no-equipment",
+    "title": "Full Body (No Equipment, No Jumping)",
+    "description": "Low-impact full-body workout for toning and strength with no equipment and no jumping.",
+    "category": "Full Body",
+    "level": "beginner",
+    "durationMinutes": 30,
+    "youTubeVideoId": "dUgCCzwiOIU",
+    "targetMuscles": ["quadriceps", "glutes", "abdominals", "shoulders", "chest"],
+    "displayOrder": 4
+  },
+  {
+    "slug": "push-day",
+    "title": "Push Day — Chest, Shoulders & Triceps",
+    "description": "Dumbbell push session building chest, shoulders and triceps at home.",
+    "category": "Upper Body",
+    "level": "intermediate",
+    "durationMinutes": 25,
+    "youTubeVideoId": "tZisMh4cigE",
+    "targetMuscles": ["chest", "shoulders", "triceps"],
+    "displayOrder": 5
+  },
+  {
+    "slug": "upper-body-push-pull",
+    "title": "Upper Body Push & Pull",
+    "description": "Complete upper-body dumbbell workout pairing push and pull patterns.",
+    "category": "Upper Body",
+    "level": "intermediate",
+    "durationMinutes": 30,
+    "youTubeVideoId": "5WQi3tTxnXU",
+    "targetMuscles": ["chest", "lats", "biceps", "triceps", "shoulders", "middle back"],
+    "displayOrder": 6
+  },
+  {
+    "slug": "core-and-abs",
+    "title": "Core & Abs",
+    "description": "Total core and ab workout at home, no equipment, 20 moves in 20 minutes.",
+    "category": "Core",
+    "level": "beginner",
+    "durationMinutes": 20,
+    "youTubeVideoId": "KFcUwNl7eXo",
+    "targetMuscles": ["abdominals", "lower back"],
+    "displayOrder": 7
+  },
+  {
+    "slug": "intense-abs",
+    "title": "Intense Abs (No Repeat)",
+    "description": "A no-repeat, no-equipment abs burner for a stronger, more defined core.",
+    "category": "Core",
+    "level": "intermediate",
+    "durationMinutes": 20,
+    "youTubeVideoId": "3oeimlA6s68",
+    "targetMuscles": ["abdominals"],
+    "displayOrder": 8
+  },
+  {
+    "slug": "hiit-cardio",
+    "title": "HIIT Cardio (All Standing)",
+    "description": "Full-body standing HIIT cardio to burn fat — no equipment, no floor work.",
+    "category": "Cardio",
+    "level": "intermediate",
+    "durationMinutes": 20,
+    "youTubeVideoId": "yXHgcYpUVD4",
+    "targetMuscles": ["quadriceps", "glutes", "calves", "abdominals"],
+    "displayOrder": 9
+  },
+  {
+    "slug": "full-body-stretch",
+    "title": "Full Body Stretch & Mobility",
+    "description": "Follow-along full-body stretch to improve mobility, flexibility and recovery.",
+    "category": "Mobility",
+    "level": "beginner",
+    "durationMinutes": 15,
+    "youTubeVideoId": "i6TzP2COtow",
+    "targetMuscles": ["hamstrings", "glutes", "lower back", "shoulders", "quadriceps", "calves"],
+    "displayOrder": 10
+  },
+  {
+    "slug": "daily-stretch",
+    "title": "Daily Stretch",
+    "description": "A relaxing daily full-body stretch for tight muscles, flexibility and mobility.",
+    "category": "Mobility",
+    "level": "beginner",
+    "durationMinutes": 15,
+    "youTubeVideoId": "_IoYLhrTBqY",
+    "targetMuscles": ["hamstrings", "lower back", "shoulders", "neck", "glutes"],
+    "displayOrder": 11
+  }
+]

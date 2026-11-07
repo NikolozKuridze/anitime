@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+COPY Anitime.sln ./
+COPY src/Anitime.Api/Anitime.Api.csproj src/Anitime.Api/
+COPY src/Anitime.Application/Anitime.Application.csproj src/Anitime.Application/
+COPY src/Anitime.Contracts/Anitime.Contracts.csproj src/Anitime.Contracts/
+COPY src/Anitime.Domain/Anitime.Domain.csproj src/Anitime.Domain/
+COPY src/Anitime.Infrastructure/Anitime.Infrastructure.csproj src/Anitime.Infrastructure/
+RUN dotnet restore src/Anitime.Api/Anitime.Api.csproj
+
+COPY . .
+RUN dotnet publish src/Anitime.Api/Anitime.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
+ENTRYPOINT ["dotnet", "Anitime.Api.dll"]

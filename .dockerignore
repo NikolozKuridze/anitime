@@ -1,0 +1,8 @@
+**/bin
+**/obj
+.git
+.gitignore
+.DS_Store
+._*
+**/._*
+__MACOSX

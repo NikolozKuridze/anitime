@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Anitime.Worker-7baa828a-70cf-429c-8a0b-ee86b833ff4a</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.5" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anitime.Application\Anitime.Application.csproj" />
+    <ProjectReference Include="..\Anitime.Infrastructure\Anitime.Infrastructure.csproj" />
+    <ProjectReference Include="..\Anitime.Contracts\Anitime.Contracts.csproj" />
+  </ItemGroup>
+</Project>
