@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Anitime.Api.Infrastructure;
 using Anitime.Api.Mapping;
 using Anitime.Application.Caching;
 using Anitime.Application.Common;
@@ -35,8 +36,8 @@ public sealed class ExercisesController : BaseApiController
         [FromQuery] int pageSize,
         CancellationToken cancellationToken)
     {
-        page = page < 1 ? 1 : page;
         pageSize = pageSize < 1 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+        page = Math.Clamp(page, 1, int.MaxValue / MaxPageSize); // keeps the SQL offset from overflowing
 
         var query = db.Exercises.AsNoTracking();
 
@@ -130,7 +131,7 @@ public sealed class ExercisesController : BaseApiController
         var response = new ExerciseFiltersResponse(muscles, equipment, categories, levels);
         await cache.SetStringAsync(
             CacheKeys.ExerciseFilters,
-            JsonSerializer.Serialize(response),
+            JsonSerializer.Serialize(response, CacheJson.Options),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(12) },
             cancellationToken);
 

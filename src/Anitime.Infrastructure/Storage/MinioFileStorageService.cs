@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Minio;
 using Minio.DataModel.Args;
+using Minio.Exceptions;
 
 namespace Anitime.Infrastructure.Storage;
 
@@ -49,10 +50,18 @@ public sealed class MinioFileStorageService : IFileStorageService
 
         await EnsureBucketAsync(cancellationToken);
         var memory = new MemoryStream();
-        await _client.GetObjectAsync(new GetObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectName)
-            .WithCallbackStream(stream => stream.CopyTo(memory)), cancellationToken);
+        try
+        {
+            await _client.GetObjectAsync(new GetObjectArgs()
+                .WithBucket(_options.BucketName)
+                .WithObject(objectName)
+                .WithCallbackStream(stream => stream.CopyTo(memory)), cancellationToken);
+        }
+        catch (ObjectNotFoundException)
+        {
+            return null;
+        }
+
         memory.Position = 0;
         return memory;
     }

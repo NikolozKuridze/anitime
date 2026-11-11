@@ -12,6 +12,9 @@ namespace Anitime.Api.Controllers;
 [Route("api/calendar")]
 public sealed class CalendarController : BaseApiController
 {
+    private const int MinYear = 1;
+    private const int MaxYear = 9998; // the month end is computed from the next month, which must exist
+
     [HttpGet]
     [ProducesResponseType(typeof(CalendarMonthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
@@ -26,6 +29,12 @@ public sealed class CalendarController : BaseApiController
         {
             return FromResult(Result<CalendarMonthResponse>.Failure(
                 AppErrors.InvalidRequest("Month must be between 1 and 12.")));
+        }
+
+        if (year is < MinYear or > MaxYear)
+        {
+            return FromResult(Result<CalendarMonthResponse>.Failure(
+                AppErrors.InvalidRequest($"Year must be between {MinYear} and {MaxYear}.")));
         }
 
         var userId = userContext.GetRequiredUserId();

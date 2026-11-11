@@ -10,7 +10,7 @@ public sealed class RichNoteDocumentValidator : AbstractValidator<RichNoteDocume
     {
         RuleFor(x => x.Version).Equal(1);
         RuleFor(x => x.Blocks).NotNull();
-        RuleFor(x => x.Blocks.Count).LessThanOrEqualTo(500).When(x => x.Blocks is not null);
+        RuleFor(x => x.Blocks.Count).LessThanOrEqualTo(NoteValidationRules.MaxBlocks).When(x => x.Blocks is not null);
     }
 }
 
@@ -22,7 +22,6 @@ public sealed class CreateNoteRequestValidator : AbstractValidator<CreateNoteReq
             .WithMessage(NoteValidationRules.EmptyNoteMessage);
         RuleFor(x => x.Title).MaximumLength(160);
         RuleFor(x => x.ContentJson).NotNull().SetValidator(new RichNoteDocumentValidator());
-        RuleFor(x => x.PlainTextPreview).MaximumLength(50_000);
         RuleFor(x => x.FontFamily).MaximumLength(64);
         RuleFor(x => x.FontSize).InclusiveBetween(10, 48);
         RuleFor(x => x.FontWeight).InclusiveBetween(100, 900);
@@ -52,7 +51,6 @@ public sealed class UpdateNoteRequestValidator : AbstractValidator<UpdateNoteReq
             .When(x => x.PlainTextPreview is not null);
         RuleFor(x => x.ContentJson!).SetValidator(new RichNoteDocumentValidator())
             .When(x => x.ContentJson is not null);
-        RuleFor(x => x.PlainTextPreview).MaximumLength(50_000);
         RuleFor(x => x.FontFamily).MaximumLength(64);
         RuleFor(x => x.FontSize).InclusiveBetween(10, 48);
         RuleFor(x => x.FontWeight).InclusiveBetween(100, 900);
@@ -74,13 +72,13 @@ public sealed class UpdateNoteContentRequestValidator : AbstractValidator<Update
     public UpdateNoteContentRequestValidator()
     {
         RuleFor(x => x.ContentJson).NotNull().SetValidator(new RichNoteDocumentValidator());
-        RuleFor(x => x.PlainTextPreview).MaximumLength(50_000);
         RuleFor(x => x.VersionToken).NotEmpty().MaximumLength(64);
     }
 }
 
 public static class NoteValidationRules
 {
+    public const int MaxBlocks = 5000;
     public const string EmptyNoteMessage = "A note must contain a title or rich text content.";
 
     public static bool BeValidColor(string? value) =>

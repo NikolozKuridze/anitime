@@ -12,7 +12,8 @@ public sealed record LogoutRequest(string RefreshToken);
 
 public sealed record ForgotPasswordRequest(string Email);
 
-public sealed record ResetPasswordRequest(string Token, string NewPassword);
+/// <summary>With <paramref name="Email"/>, <paramref name="Token"/> is the emailed 6-digit code; without it, a legacy long reset token.</summary>
+public sealed record ResetPasswordRequest(string Token, string NewPassword, string? Email = null);
 
 public sealed record AuthResponse(
     Guid UserId,

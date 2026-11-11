@@ -11,6 +11,8 @@ namespace Anitime.Infrastructure.Messaging;
 
 public sealed class RabbitMqReminderPublisher : IReminderPublisher, IDisposable
 {
+    private static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(5);
+
     private readonly RabbitMqOptions _options;
     private readonly ILogger<RabbitMqReminderPublisher> _logger;
     private readonly Lazy<IConnection> _connection;
@@ -19,7 +21,8 @@ public sealed class RabbitMqReminderPublisher : IReminderPublisher, IDisposable
     {
         _options = options.Value;
         _logger = logger;
-        _connection = new Lazy<IConnection>(CreateConnection);
+        // PublicationOnly: the default mode caches a failed connection forever, so RabbitMQ being down once would need a restart.
+        _connection = new Lazy<IConnection>(CreateConnection, LazyThreadSafetyMode.PublicationOnly);
     }
 
     public Task PublishAsync(ReminderTriggeredIntegrationEvent message, CancellationToken cancellationToken)
@@ -28,12 +31,14 @@ public sealed class RabbitMqReminderPublisher : IReminderPublisher, IDisposable
 
         using var channel = _connection.Value.CreateModel();
         channel.QueueDeclare(_options.QueueName, durable: true, exclusive: false, autoDelete: false);
+        channel.ConfirmSelect();
 
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
         var properties = channel.CreateBasicProperties();
         properties.Persistent = true;
 
         channel.BasicPublish(exchange: string.Empty, routingKey: _options.QueueName, basicProperties: properties, body: body);
+        channel.WaitForConfirmsOrDie(ConfirmTimeout); // the caller only marks the reminder as sent once the broker has it
         _logger.LogInformation("Published reminder event {ReminderId}", message.ReminderId);
 
         return Task.CompletedTask;

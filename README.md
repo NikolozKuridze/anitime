@@ -31,6 +31,7 @@ Lean modular monolith for habits, daily tracking, tasks, dashboard analytics, re
 ## Run with Docker
 
 ```bash
+cp .env.example .env   # then fill in the secrets
 docker compose up --build
 ```
 
@@ -52,7 +53,8 @@ dotnet run --project src/Anitime.Worker
 
 ## Notes
 
-- Password reset returns a `debugToken` only in development.
+- Password reset emails a 6-digit code through Resend (`EMAIL_PROVIDER=Resend`, `RESEND_API_KEY`, `EMAIL_FROM` in `.env`). The code lasts 15 minutes and allows 5 attempts. The app sends `{ email, token: code, newPassword }` to `/api/auth/reset-password`.
+- Without those settings, production sends nothing and logs a warning without the code. In Development the email is written to the log and the code is returned as `debugToken`.
 - The notification sender is currently a logging placeholder. Replace `LoggingPushNotificationSender` with Firebase/APNS integration for production.
 - For a higher delivery guarantee later, add an outbox table around reminder event publishing.
 - The sample uses `EnsureCreated()` for frictionless startup. If you want formal migrations, switch startup to `Migrate()` and add an initial migration with `dotnet ef`.

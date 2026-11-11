@@ -2,5 +2,5 @@
 **/obj/
 .DS_Store
 
-# Holds live secrets; lives on disk only (deploy-macos.sh uploads it from here).
-docker-compose.yml
+# Live secrets; lives on disk only (deploy-macos.sh uploads it from here).
+.env

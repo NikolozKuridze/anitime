@@ -14,6 +14,9 @@ namespace Anitime.Api.Controllers;
 [Route("api/analytics")]
 public sealed class AnalyticsController : BaseApiController
 {
+    private const int DefaultRangeDays = 30;
+    private const int MaxRangeDays = 366; // the response has one row per day, computed in memory
+
     [HttpGet]
     [ProducesResponseType(typeof(AnalyticsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
@@ -27,12 +30,18 @@ public sealed class AnalyticsController : BaseApiController
     {
         var userId = userContext.GetRequiredUserId();
         var end = to ?? ClientDateResolver.ResolveToday(Request, clock);
-        var start = from ?? end.AddDays(-29);
+        var start = from ?? DateOnly.FromDayNumber(Math.Max(0, end.DayNumber - (DefaultRangeDays - 1)));
 
         if (end < start)
         {
             return FromResult(Result<AnalyticsResponse>.Failure(
                 AppErrors.InvalidRequest("`to` must be greater than or equal to `from`.")));
+        }
+
+        if (end.DayNumber - start.DayNumber + 1 > MaxRangeDays)
+        {
+            return FromResult(Result<AnalyticsResponse>.Failure(
+                AppErrors.InvalidRequest($"The date range cannot exceed {MaxRangeDays} days.")));
         }
 
         var habits = await db.Habits
@@ -47,8 +56,9 @@ public sealed class AnalyticsController : BaseApiController
             .ToListAsync(cancellationToken);
 
         var daily = new List<DailyStatResponse>();
-        for (var day = start; day <= end; day = day.AddDays(1))
+        for (var dayNumber = start.DayNumber; dayNumber <= end.DayNumber; dayNumber++)
         {
+            var day = DateOnly.FromDayNumber(dayNumber);
             daily.Add(new DailyStatResponse(
                 day,
                 habits.Sum(h => h.Entries.Count(e => e.Date == day && e.IsCompleted)),

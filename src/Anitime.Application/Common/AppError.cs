@@ -26,6 +26,9 @@ public static class AppErrors
     public static AppError InvalidRequest(string message) =>
         new("invalid_request", message, 400);
 
+    public static AppError PayloadTooLarge(string message) =>
+        new("payload_too_large", message, 413);
+
     public static AppError BusinessRule(string message) =>
         new("business_rule_violation", message, 400);
 }

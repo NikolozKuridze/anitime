@@ -58,7 +58,7 @@ public sealed class DashboardController : BaseApiController
 
         await cache.SetStringAsync(
             cacheKey,
-            JsonSerializer.Serialize(response),
+            JsonSerializer.Serialize(response, CacheJson.Options),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) },
             cancellationToken);
 

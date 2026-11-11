@@ -30,6 +30,11 @@ require_command ssh
 require_command scp
 require_command tar
 
+if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
+  echo "Missing $SCRIPT_DIR/.env. Copy .env.example and fill in the secrets." >&2
+  exit 1
+fi
+
 SERVER_IP="$(prompt_with_default "Server IP" "")"
 if [[ -z "$SERVER_IP" ]]; then
   echo "Server IP is required." >&2

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using Anitime.Api.Infrastructure;
 using Anitime.Api.Mapping;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Caching;
@@ -20,14 +20,6 @@ namespace Anitime.Api.Controllers;
 [Route("api/profile")]
 public sealed class ProfileController : BaseApiController
 {
-    // Match the MVC JSON output so a cache HIT returns the same shape as a cache MISS:
-    // camelCase property names + enums as strings (not integer enum indexes).
-    private static readonly JsonSerializerOptions CacheJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter() }
-    };
-
     [HttpGet]
     [ProducesResponseType(typeof(UserProfileResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
@@ -58,7 +50,7 @@ public sealed class ProfileController : BaseApiController
         var response = user.ToResponse(Request);
         await cache.SetStringAsync(
             cacheKey,
-            JsonSerializer.Serialize(response, CacheJsonOptions),
+            JsonSerializer.Serialize(response, CacheJson.Options),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10) },
             cancellationToken);
 
@@ -187,9 +179,11 @@ public sealed class ProfileController : BaseApiController
     }
 
     [HttpPost("profile-image")]
-    [DisableRequestSizeLimit]
+    [RequestSizeLimit(ApiMappings.MaxImageRequestBytes)]
+    [RejectOversizedImageRequest]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status413PayloadTooLarge)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UploadProfileImage(
         IFormFile file,
@@ -198,6 +192,7 @@ public sealed class ProfileController : BaseApiController
         [FromServices] IFileStorageService fileStorageService,
         [FromServices] IDistributedCache cache,
         [FromServices] IClock clock,
+        [FromServices] ILogger<ProfileController> logger,
         CancellationToken cancellationToken)
     {
         var userId = userContext.GetRequiredUserId();
@@ -210,35 +205,35 @@ public sealed class ProfileController : BaseApiController
         var fileValidation = ApiMappings.ValidateImageFile(file);
         if (fileValidation is not null)
         {
-            return FromResult(Result.Failure(AppErrors.InvalidRequest(fileValidation)));
+            return FromResult(Result.Failure(fileValidation));
         }
 
+        var contentType = ApiMappings.DetectImageContentType(file)!;
         await using var stream = file.OpenReadStream();
         var previousObjectName = user.ProfileImageObjectName;
         var objectName = await fileStorageService.UploadAsync(
-            ApiMappings.BuildObjectName(userId, "profile", file.FileName),
+            ApiMappings.BuildObjectName(userId, "profile", contentType),
             stream,
-            file.ContentType,
+            contentType,
             cancellationToken);
 
         user.ProfileImageObjectName = objectName;
-        user.ProfileImageContentType = file.ContentType;
+        user.ProfileImageContentType = contentType;
         user.UpdatedAtUtc = clock.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(previousObjectName) && previousObjectName != objectName)
-        {
-            await fileStorageService.DeleteAsync(previousObjectName, cancellationToken);
-        }
+        await DeletePreviousImageAsync(fileStorageService, previousObjectName, logger, cancellationToken);
 
         await cache.RemoveAsync(CacheKeys.Profile(userId), cancellationToken);
         return NoContent();
     }
 
     [HttpPost("background-image")]
-    [DisableRequestSizeLimit]
+    [RequestSizeLimit(ApiMappings.MaxImageRequestBytes)]
+    [RejectOversizedImageRequest]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status413PayloadTooLarge)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UploadBackgroundImage(
         IFormFile file,
@@ -247,6 +242,7 @@ public sealed class ProfileController : BaseApiController
         [FromServices] IFileStorageService fileStorageService,
         [FromServices] IDistributedCache cache,
         [FromServices] IClock clock,
+        [FromServices] ILogger<ProfileController> logger,
         CancellationToken cancellationToken)
     {
         var userId = userContext.GetRequiredUserId();
@@ -259,33 +255,48 @@ public sealed class ProfileController : BaseApiController
         var fileValidation = ApiMappings.ValidateImageFile(file);
         if (fileValidation is not null)
         {
-            return FromResult(Result.Failure(AppErrors.InvalidRequest(fileValidation)));
+            return FromResult(Result.Failure(fileValidation));
         }
 
         var settings = await GetOrCreateUserSettingsAsync(db, userId, clock.UtcNow, cancellationToken);
 
+        var contentType = ApiMappings.DetectImageContentType(file)!;
         await using var stream = file.OpenReadStream();
         var previousObjectName = user.BackgroundImageObjectName;
         var objectName = await fileStorageService.UploadAsync(
-            ApiMappings.BuildObjectName(userId, "background", file.FileName),
+            ApiMappings.BuildObjectName(userId, "background", contentType),
             stream,
-            file.ContentType,
+            contentType,
             cancellationToken);
 
         user.BackgroundImageObjectName = objectName;
-        user.BackgroundImageContentType = file.ContentType;
+        user.BackgroundImageContentType = contentType;
         user.UpdatedAtUtc = clock.UtcNow;
         settings.BackgroundStyleType = BackgroundStyleType.Image;
         settings.UpdatedAtUtc = clock.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(previousObjectName) && previousObjectName != objectName)
-        {
-            await fileStorageService.DeleteAsync(previousObjectName, cancellationToken);
-        }
+        await DeletePreviousImageAsync(fileStorageService, previousObjectName, logger, cancellationToken);
 
         await cache.RemoveAsync(CacheKeys.Profile(userId), cancellationToken);
         return NoContent();
+    }
+
+    // The new image is already saved, so a leftover old object must not fail the request.
+    private static async Task DeletePreviousImageAsync(
+        IFileStorageService fileStorageService,
+        string? objectName,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await fileStorageService.DeleteAsync(objectName, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Failed to delete previous image {ObjectName}", objectName);
+        }
     }
 
     private static async Task<UserSettings> GetOrCreateUserSettingsAsync(

@@ -1,3 +1,4 @@
+using Anitime.Application.Common;
 using Anitime.Application.Rules;
 using Anitime.Contracts;
 using Anitime.Domain.Entities;
@@ -136,28 +137,67 @@ public static class ApiMappings
     private static string BuildThumbnailUrl(string youTubeVideoId) =>
         $"https://img.youtube.com/vi/{youTubeVideoId}/hqdefault.jpg";
 
-    public static string BuildObjectName(Guid userId, string assetType, string fileName)
+    public const long MaxImageBytes = 5 * 1024 * 1024;
+
+    public const string ImageTooLargeMessage = "Image is too large. Maximum size is 5 MB.";
+
+    /// <summary>
+    /// Hard cap on an upload request. Well above <see cref="MaxImageBytes"/> on purpose: the body is read in full, so the
+    /// client reliably gets the 413 JSON answer instead of a connection reset. Must stay under Kestrel's 30 MB default.
+    /// </summary>
+    public const long MaxImageRequestBytes = 25 * 1024 * 1024;
+
+    public static string BuildObjectName(Guid userId, string assetType, string contentType)
     {
-        var extension = Path.GetExtension(fileName);
+        var extension = contentType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => string.Empty
+        };
         return $"users/{userId}/{assetType}/{Guid.NewGuid():N}{extension}";
     }
 
-    public static string? ValidateImageFile(IFormFile file)
+    /// <summary>Detects the type from the file's leading bytes, because the client's content type and file name are only claims.</summary>
+    public static string? DetectImageContentType(IFormFile file)
+    {
+        Span<byte> header = stackalloc byte[12];
+        using var stream = file.OpenReadStream();
+        var read = stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
+        header = header[..read];
+
+        if (header.StartsWith<byte>([0xFF, 0xD8, 0xFF]))
+        {
+            return "image/jpeg";
+        }
+
+        if (header.StartsWith<byte>([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+        {
+            return "image/png";
+        }
+
+        return read == header.Length && read >= 12 && header[..4].SequenceEqual("RIFF"u8) && header[8..12].SequenceEqual("WEBP"u8)
+            ? "image/webp"
+            : null;
+    }
+
+    public static AppError? ValidateImageFile(IFormFile file)
     {
         if (file.Length == 0)
         {
-            return "Image file is empty.";
+            return AppErrors.InvalidRequest("Image file is empty.");
         }
 
-        if (file.Length > 5 * 1024 * 1024)
+        if (file.Length > MaxImageBytes)
         {
-            return "Image file must be 5 MB or smaller.";
+            return AppErrors.PayloadTooLarge(ImageTooLargeMessage);
         }
 
         var allowed = new[] { "image/jpeg", "image/png", "image/webp" };
-        if (!allowed.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+        if (!allowed.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase) || DetectImageContentType(file) is null)
         {
-            return "Only JPEG, PNG, and WEBP images are supported.";
+            return AppErrors.InvalidRequest("Only JPEG, PNG, and WEBP images are supported.");
         }
 
         return null;

@@ -15,7 +15,8 @@ public sealed class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.Property(x => x.Emoji).HasMaxLength(16).IsRequired();
         builder.Property(x => x.ClientRequestId).HasMaxLength(64);
         builder.HasIndex(x => new { x.UserId, x.Date });
-        builder.HasIndex(x => new { x.UserId, x.ClientRequestId }).IsUnique();
+        // Filtered so a deleted task doesn't block a later create with the same id.
+        builder.HasIndex(x => new { x.UserId, x.ClientRequestId }).IsUnique().HasFilter("\"IsDeleted\" = false");
         builder.HasOne(x => x.User).WithMany(x => x.Tasks).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

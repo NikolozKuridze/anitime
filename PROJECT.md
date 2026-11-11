@@ -9,7 +9,7 @@
 
 A mobile-first backend (JWT, CORS for Capacitor/Ionic clients) covering:
 
-- **Auth** — signup, login, refresh tokens, forgot/reset password (PBKDF2 hashing).
+- **Auth** — signup, login, refresh tokens, forgot/reset password by emailed 6-digit code (PBKDF2 hashing). Email goes through `IEmailOutbox` (background queue) to `IEmailSender` (`Infrastructure/Email`: Resend, a Development log sender, or a no-op that warns).
 - **Profile** — name, gender, DOB, age; profile + background images (MinIO); background style settings (transparent/solid/gradient/image).
 - **Habits** — 30-day habit challenges with daily check toggling, current/best streaks, progress.
 - **Tasks** — task list with checklist items, completion tracking.
@@ -145,7 +145,7 @@ dotnet run --project src/Anitime.Worker
 ```
 
 - Migrations apply automatically on startup; the exercise catalog seeds automatically on first run.
-- ⚠️ **Secrets** (DB/Redis/RabbitMQ/MinIO passwords, JWT signing key) are currently **hard-coded in `docker-compose.yml`** — move to env/secret store before any real deployment.
+- **Secrets** live in a git-ignored `.env` (copy `.env.example`), which `docker compose` requires and `deploy-macos.sh` uploads. Postgres, Redis, RabbitMQ and the MinIO console bind to `127.0.0.1`; use an SSH tunnel to reach them on a server.
 
 ---
 
@@ -156,7 +156,9 @@ dotnet build Anitime.sln           # clean
 dotnet test                        # Application.Tests (rules + validators) and Api.Tests (real API + PostgreSQL, requires Docker)
 ```
 
-**Notes concurrency:** `Note.VersionToken` is an EF concurrency token, so overlapping saves with one token resolve to exactly one `200` and the rest `409`. `PUT /api/notes/{id}` keeps stored content when both `contentJson` and `plainTextPreview` are omitted (installed apps send this). Request JSON depth is limited to 64; beyond that the API returns a JSON `500` (known limitation, pinned by a test).
+**Notes concurrency:** `Note.VersionToken` is an EF concurrency token, so overlapping saves with one token resolve to exactly one `200` and the rest `409`. `PUT /api/notes/{id}` keeps stored content when both `contentJson` and `plainTextPreview` are omitted (installed apps send this). Limits: 5000 top-level blocks per note, JSON depth 64 (`400` beyond either), and `plainTextPreview` is shortened to 50,000 characters rather than rejected. Block nodes carry an optional `checked`.
+
+**Resilience and limits:** the cache is wrapped by `ResilientDistributedCache`, so a Redis outage reads as a miss (each call can still wait about 5s). Signup, login, forgot-password and reset-password are limited to 20 requests per minute per IP (`RateLimiting:AuthPermitLimit`, keyed on `CF-Connecting-IP`). A refresh token can be reused for 30s after rotation. Reset codes: 15 minutes, 5 attempts (taken atomically before each check), a new code invalidates older ones; the legacy long token still works when no email is sent. Image uploads: over 5 MB returns 413 JSON; the request cap is 25 MB (below Kestrel's 30 MB default) so the body is read and the client gets the JSON. The worker skips reminder events more than 1 hour late.
 
 **Logging:** `Microsoft.AspNetCore.Hosting.Diagnostics` at `Information` logs method, path, status and duration for each request, with no bodies or auth headers.
 

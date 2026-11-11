@@ -51,6 +51,22 @@ public sealed class ConcurrencyApiTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task CacheOutage_DoesNotTurnCommittedWritesInto500()
+    {
+        var healthy = await fixture.NewUserClientAsync();
+        var client = fixture.ClientWithCacheOutage(healthy.DefaultRequestHeaders.Authorization!.Parameter!);
+
+        var create = await client.PostAsJsonAsync("/api/habits", new { title = "Run", emoji = "🏃", durationDays = 30 });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var id = (await create.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/dashboard")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/profile")).StatusCode);
+        var list = await healthy.GetFromJsonAsync<JsonElement>("/api/habits");
+        Assert.Contains(list.EnumerateArray(), h => h.GetProperty("id").GetString() == id);
+    }
+
+    [Fact]
     public async Task ParallelTaskCreatesWithSameClientRequestId_CreateOnlyOneTask()
     {
         var client = await fixture.NewUserClientAsync();

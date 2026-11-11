@@ -12,7 +12,8 @@ public sealed record RichTextTextNode(
 public sealed record RichTextBlockNode(
     string Type,
     string? Align,
-    IReadOnlyCollection<RichTextNode> Children);
+    IReadOnlyCollection<RichTextNode> Children,
+    bool? Checked = null);
 
 public sealed record RichTextNode(
     RichTextTextNode? TextNode = null,

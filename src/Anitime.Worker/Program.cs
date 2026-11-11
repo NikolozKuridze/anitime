@@ -1,8 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using Anitime.Application.Abstractions;
+using Anitime.Application.Rules;
 using Anitime.Contracts;
 using Anitime.Infrastructure;
+using Anitime.Infrastructure.Notifications;
 using Anitime.Infrastructure.Options;
 using Anitime.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -104,16 +106,14 @@ public sealed class ReminderDispatchWorker : BackgroundService
                     reminder.UpdatedAtUtc = now;
                     if (reminder.RepeatDaily)
                     {
-                        reminder.ScheduledForUtc = reminder.ScheduledForUtc.AddDays(1);
+                        reminder.ScheduledForUtc = ReminderSchedule.NextDailyOccurrence(reminder.ScheduledForUtc, now);
                     }
                     else
                     {
                         reminder.IsEnabled = false;
                     }
-                }
 
-                if (dueReminders.Count > 0)
-                {
+                    // Saved per reminder so a failure can't re-send the ones already published in this batch.
                     await db.SaveChangesAsync(stoppingToken);
                 }
             }
@@ -131,6 +131,8 @@ public sealed class ReminderDispatchWorker : BackgroundService
 
 public sealed class ReminderNotificationConsumer : BackgroundService
 {
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly RabbitMqOptions _options;
     private readonly ILogger<ReminderNotificationConsumer> _logger;
@@ -155,7 +157,9 @@ public sealed class ReminderNotificationConsumer : BackgroundService
             Port = _options.Port,
             UserName = _options.UserName,
             Password = _options.Password,
-            VirtualHost = _options.VirtualHost
+            VirtualHost = _options.VirtualHost,
+            // Required for AsyncEventingBasicConsumer: without it RabbitMQ.Client never invokes the Received handler.
+            DispatchConsumersAsync = true
         };
 
         _connection = factory.CreateConnection();
@@ -187,14 +191,35 @@ public sealed class ReminderNotificationConsumer : BackgroundService
                 }
 
                 using var scope = _scopeFactory.CreateScope();
-                var sender = scope.ServiceProvider.GetRequiredService<IPushNotificationSender>();
-                await sender.SendAsync(message, stoppingToken);
+                var now = scope.ServiceProvider.GetRequiredService<IClock>().UtcNow;
+                if (ReminderSchedule.IsStale(message.ScheduledForUtc, now))
+                {
+                    _logger.LogInformation("Skipping reminder {ReminderId} scheduled for {ScheduledForUtc}: more than {MaxDelay} late.",
+                        message.ReminderId, message.ScheduledForUtc, ReminderSchedule.MaxDeliveryDelay);
+                    _channel.BasicAck(args.DeliveryTag, false);
+                    return;
+                }
+
+                var deduplicator = scope.ServiceProvider.GetRequiredService<ReminderDeliveryDeduplicator>();
+                if (!await deduplicator.WasDeliveredAsync(message.ReminderId, message.ScheduledForUtc, stoppingToken))
+                {
+                    var sender = scope.ServiceProvider.GetRequiredService<IPushNotificationSender>();
+                    await sender.SendAsync(message, stoppingToken);
+                    await deduplicator.MarkDeliveredAsync(message.ReminderId, message.ScheduledForUtc, stoppingToken);
+                }
 
                 _channel.BasicAck(args.DeliveryTag, false);
+            }
+            catch (JsonException ex)
+            {
+                // Retrying can never fix a malformed message, and requeueing it would loop forever.
+                _logger.LogError(ex, "Dropping malformed reminder event.");
+                _channel.BasicNack(args.DeliveryTag, false, false);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to process reminder event.");
+                await Task.Delay(RetryDelay, CancellationToken.None); // keeps an outage from becoming a tight requeue loop
                 _channel.BasicNack(args.DeliveryTag, false, true);
             }
         };

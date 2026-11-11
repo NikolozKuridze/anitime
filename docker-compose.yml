@@ -1,0 +1,137 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "1717:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=anitime;Username=anitime_user;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
+      Jwt__Issuer: anitime-api
+      Jwt__Audience: anitime-mobile
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in .env}"
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: anitime_queue
+      RabbitMq__Password: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}"
+      RabbitMq__VirtualHost: /
+      RabbitMq__QueueName: reminder-triggered
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: anitime_media
+      Minio__SecretKey: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+      Minio__BucketName: anitime-media
+      Minio__PublicBaseUrl: https://cdn.anitime.space
+      Minio__UseSsl: false
+      Email__Provider: "${EMAIL_PROVIDER:-}"
+      Email__ResendApiKey: "${RESEND_API_KEY:-}"
+      Email__From: "${EMAIL_FROM:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=anitime;Username=anitime_user;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
+      Jwt__Issuer: anitime-api
+      Jwt__Audience: anitime-mobile
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in .env}"
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: anitime_queue
+      RabbitMq__Password: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}"
+      RabbitMq__VirtualHost: /
+      RabbitMq__QueueName: reminder-triggered
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: anitime_media
+      Minio__SecretKey: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+      Minio__BucketName: anitime-media
+      Minio__PublicBaseUrl: https://cdn.anitime.space
+      Minio__UseSsl: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: anitime
+      POSTGRES_USER: anitime_user
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anitime_user -d anitime"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: anitime_queue
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}"
+    ports:
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15673:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: anitime_media
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+    ports:
+      - "19100:9000"
+      - "127.0.0.1:19101:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+  minio-data:

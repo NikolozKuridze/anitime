@@ -16,6 +16,9 @@ namespace Anitime.Api.Controllers;
 [Route("api/notes")]
 public sealed class NotesController : BaseApiController
 {
+    private const int MaxTitleLength = 160;
+    private const int MaxPlainTextPreviewLength = 50_000;
+    private const string CopySuffix = " (Copy)";
     private const string VersionConflictMessage = "Note was changed by another request. Refresh and retry.";
 
     // Notes migrated from the pre-rich-text schema were stored with camelCase keys; new ones use PascalCase.
@@ -236,7 +239,7 @@ public sealed class NotesController : BaseApiController
         var copy = new Note
         {
             UserId = source.UserId,
-            Title = string.IsNullOrWhiteSpace(source.Title) ? "Copy" : $"{source.Title} (Copy)",
+            Title = BuildCopyTitle(source.Title),
             ContentJson = source.ContentJson,
             PlainTextPreview = source.PlainTextPreview,
             FontFamily = source.FontFamily,
@@ -317,27 +320,38 @@ public sealed class NotesController : BaseApiController
             note.CreatedAtUtc,
             note.UpdatedAtUtc);
 
-    private static string NormalizeTitle(string? value) => StripNul(value)?.Trim() ?? string.Empty;
-    private static string NormalizePlainTextPreview(string? value) => StripNul(value)?.Trim() ?? string.Empty;
-    private static string NormalizeFontFamily(string? value) => string.IsNullOrWhiteSpace(StripNul(value)) ? "system-ui" : StripNul(value)!.Trim();
+    private static string NormalizeTitle(string? value) => value?.Trim() ?? string.Empty;
+
+    // The preview is derived from the content, so a long note is saved with a shortened preview rather than rejected.
+    private static string NormalizePlainTextPreview(string? value) => CutToLength(value?.Trim() ?? string.Empty, MaxPlainTextPreviewLength);
+
+    private static string NormalizeFontFamily(string? value) => string.IsNullOrWhiteSpace(value) ? "system-ui" : value.Trim();
     private static string NormalizeTextColor(string? value) => string.IsNullOrWhiteSpace(value) ? "#111827" : value.Trim();
     private static string NormalizeBackgroundColor(string? value) => string.IsNullOrWhiteSpace(value) ? "#FFFFFF" : value.Trim();
-    private static string SerializeContent(RichNoteDocument document) =>
-        JsonSerializer.Serialize(document with { Blocks = document.Blocks.Select(StripNul).ToList() });
+    private static string SerializeContent(RichNoteDocument document) => JsonSerializer.Serialize(document);
     private static RichNoteDocument DeserializeContent(string json) => JsonSerializer.Deserialize<RichNoteDocument>(json, ContentReadOptions) ?? new RichNoteDocument(1, []);
 
-    // PostgreSQL text and jsonb cannot store U+0000. Stripping it means a stray pasted character can't block every save.
-    private static string? StripNul(string? value) => value?.Replace("\0", string.Empty);
 
-    private static RichTextBlockNode StripNul(RichTextBlockNode block) =>
-        new(StripNul(block.Type)!, StripNul(block.Align), block.Children.Select(StripNul).ToList());
+    private static string BuildCopyTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return "Copy";
+        }
 
-    private static RichTextNode StripNul(RichTextNode node) =>
-        new(
-            node.TextNode is null ? null : new RichTextTextNode(
-                StripNul(node.TextNode.Type)!,
-                StripNul(node.TextNode.Text)!,
-                node.TextNode.Marks?.Select(m => new RichTextMark(StripNul(m.Type)!, StripNul(m.Value))).ToList()),
-            node.BlockNode is null ? null : StripNul(node.BlockNode));
+        return CutToLength(title, MaxTitleLength - CopySuffix.Length) + CopySuffix;
+    }
+
+    private static string CutToLength(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        // Never cut through an emoji: half a surrogate pair is not valid UTF-8.
+        return value[..(char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength)];
+    }
+
     private static string NewVersionToken() => Guid.NewGuid().ToString("N");
 }

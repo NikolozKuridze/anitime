@@ -256,16 +256,150 @@ public sealed class NotesApiTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task OverLimitFields_Return400_NotSilentTruncation()
+    public async Task TitleOverLimit_Returns400_NotSilentTruncation()
     {
         var client = await fixture.NewUserClientAsync();
-        var preview = Body("x");
-        preview["plainTextPreview"] = new string('p', 50_001);
         var title = Body("x");
         title["title"] = new string('t', 161);
 
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/notes", preview)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/notes", title)).StatusCode);
+    }
+
+    [Fact]
+    public async Task LongPreview_IsShortened_AndContentIsKeptWhole()
+    {
+        var client = await fixture.NewUserClientAsync();
+        var text = new string('ა', 60_000);
+
+        var response = await client.PostAsJsonAsync("/api/notes", Body(text));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var note = await Json(response);
+        Assert.Equal(50_000, note.GetProperty("plainTextPreview").GetString()!.Length);
+        Assert.Equal(60_000, Text(note).Length);
+    }
+
+    [Fact]
+    public async Task LongPreview_NeverCutsThroughAnEmoji()
+    {
+        var client = await fixture.NewUserClientAsync();
+        var body = Body("x");
+        body["plainTextPreview"] = new string('p', 49_999) + "😀😀";
+
+        var response = await client.PostAsJsonAsync("/api/notes", body);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(49_999, (await Json(response)).GetProperty("plainTextPreview").GetString()!.Length);
+    }
+
+    private static object[] Paragraphs(int count) => Enumerable.Range(0, count)
+        .Select(i => (object)new { type = "paragraph", children = new[] { new { textNode = new { type = "text", text = $"line {i}" } } } })
+        .ToArray();
+
+    [Theory]
+    [InlineData(500)]
+    [InlineData(501)]
+    [InlineData(5000)]
+    public async Task ManyBlocks_UpToLimit_AreSavedIntact(int count)
+    {
+        var client = await fixture.NewUserClientAsync();
+        var body = Body("x");
+        body["contentJson"] = new { version = 1, blocks = Paragraphs(count) };
+
+        var response = await client.PostAsJsonAsync("/api/notes", body);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var stored = await GetAsync(client, Id(await Json(response)));
+        Assert.Equal(count, stored.GetProperty("contentJson").GetProperty("blocks").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task BlocksOverLimit_Return400()
+    {
+        var client = await fixture.NewUserClientAsync();
+        var body = Body("x");
+        body["contentJson"] = new { version = 1, blocks = Paragraphs(5001) };
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/notes", body)).StatusCode);
+    }
+
+    private static object CheckItem(string text, bool? isChecked, object? nested = null)
+    {
+        var child = new { textNode = new { type = "text", text } };
+        return new
+        {
+            type = "checkboxListItem",
+            @checked = isChecked,
+            children = nested is null ? new object[] { child } : [child, new { blockNode = nested }]
+        };
+    }
+
+    [Fact]
+    public async Task CheckboxState_RoundTrips_ThroughPostPatchAndGet_IncludingNested()
+    {
+        var client = await fixture.NewUserClientAsync();
+        var body = Body("x");
+        body["contentJson"] = new { version = 1, blocks = new[] { CheckItem("outer", true, CheckItem("inner", true)) } };
+
+        var created = await client.PostAsJsonAsync("/api/notes", body);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var note = await Json(created);
+
+        static void AssertChecked(JsonElement n, bool expected)
+        {
+            var outer = n.GetProperty("contentJson").GetProperty("blocks")[0];
+            Assert.Equal(expected, outer.GetProperty("checked").GetBoolean());
+            var inner = outer.GetProperty("children")[1].GetProperty("blockNode");
+            Assert.Equal(expected, inner.GetProperty("checked").GetBoolean());
+        }
+
+        AssertChecked(note, true);
+        AssertChecked(await GetAsync(client, Id(note)), true);
+
+        var patched = await client.PatchAsJsonAsync($"/api/notes/{Id(note)}/content", new
+        {
+            contentJson = new { version = 1, blocks = new[] { CheckItem("outer", false, CheckItem("inner", false)) } },
+            plainTextPreview = "x",
+            versionToken = Token(note)
+        });
+        Assert.Equal(HttpStatusCode.OK, patched.StatusCode);
+        AssertChecked(await Json(patched), false);
+        AssertChecked(await GetAsync(client, Id(note)), false);
+    }
+
+    [Fact]
+    public async Task BlocksWithoutCheckedField_StillWork_AndReadBackAsNull()
+    {
+        var client = await fixture.NewUserClientAsync();
+
+        var note = await CreateAsync(client, "plain");
+
+        var block = (await GetAsync(client, Id(note))).GetProperty("contentJson").GetProperty("blocks")[0];
+        Assert.Equal(JsonValueKind.Null, block.GetProperty("checked").ValueKind);
+    }
+
+    [Fact]
+    public async Task SixNestedListLevels_WithLinkMarks_RoundTrip()
+    {
+        var client = await fixture.NewUserClientAsync();
+        object? nested = null;
+        for (var level = 0; level < 6; level++)
+        {
+            var mark = new { type = "link", value = "https://example.com/a?b=1" };
+            var child = new { textNode = new { type = "text", text = "item", marks = new[] { mark } } };
+            var item = new { type = "listItem", children = nested is null ? new object[] { child } : [child, new { blockNode = nested }] };
+            nested = new { type = "bulletList", children = new object[] { new { blockNode = item } } };
+        }
+
+        var body = Body("x");
+        body["contentJson"] = new { version = 1, blocks = new[] { nested } };
+        var payload = JsonSerializer.Serialize(body, new JsonSerializerOptions(JsonSerializerDefaults.Web) { MaxDepth = 256 });
+
+        var response = await client.PostAsync("/api/notes", new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var stored = await client.GetStringAsync($"/api/notes/{Id(await Json(response))}");
+        Assert.Contains("https://example.com/a?b=1", stored);
     }
 
     [Fact]
@@ -341,19 +475,14 @@ public sealed class NotesApiTests(ApiFixture fixture)
         Assert.Equal("deep", node.GetProperty("textNode").GetProperty("text").GetString());
     }
 
-    /// <summary>
-    /// KNOWN LIMITATION: past the 64-level JSON limit ASP.NET Core throws while recording the parse error,
-    /// so this is a JSON 500 rather than a 400. Nothing is stored. The app never nests this deeply.
-    /// </summary>
     [Fact]
-    public async Task ContentBeyondJsonDepthLimit_ReturnsJsonError_AndStoresNothing()
+    public async Task ContentBeyondJsonDepthLimit_Returns400_AndStoresNothing()
     {
         var client = await fixture.NewUserClientAsync();
 
         var response = await PostNestedAsync(client, levels: 40);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("internal_error", (await Json(response)).GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, (await client.GetFromJsonAsync<JsonElement>("/api/notes")).GetArrayLength());
     }
 
