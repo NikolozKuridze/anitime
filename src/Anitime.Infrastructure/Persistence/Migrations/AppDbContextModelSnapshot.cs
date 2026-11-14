@@ -312,6 +312,12 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50000)
                         .HasColumnType("character varying(50000)");
 
+                    b.Property<string>("SearchText")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("");
+
                     b.PrimitiveCollection<List<string>>("Tags")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -363,6 +369,8 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "VersionToken");
 
                     b.HasIndex("UserId", "IsArchived", "UpdatedAtUtc");
+
+                    b.HasIndex("UserId", "IsDeleted", "UpdatedAtUtc");
 
                     b.HasIndex("UserId", "IsPinned", "UpdatedAtUtc");
 

@@ -449,13 +449,16 @@ public sealed class PerformanceApiTests(ApiFixture fixture, ITestOutputHelper ou
     }
 
     [Fact]
-    public async Task Search_UsesTheTrigramIndexedExpression()
+    public async Task Search_MatchesTheStoredLowercaseColumn_ScopedToTheUser()
     {
         var (client, userId) = await UserAsync(large: true);
 
-        var queries = await CountAsync(client, userId, "/api/notes/search?q=dolor");
+        var queries = await CountAsync(client, userId, "/api/notes/search?q=Dolor");
 
-        Assert.Contains(queries.Commands, sql => sql.Contains("n.\"Title\" || ' ' || n.\"PlainTextPreview\" ILIKE", StringComparison.Ordinal));
+        var sql = Assert.Single(queries.Commands);
+        Assert.Contains("strpos(n.\"SearchText\"", sql, StringComparison.Ordinal);
+        Assert.Contains("\"UserId\" =", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIKE", sql, StringComparison.Ordinal);
     }
 }
 

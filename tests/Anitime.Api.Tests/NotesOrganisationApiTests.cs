@@ -653,6 +653,31 @@ public sealed class NotesOrganisationApiTests(ApiFixture fixture)
         Assert.True(locked.GetProperty("isLocked").GetBoolean());
     }
 
+    [Fact]
+    public async Task Search_FollowsTitleTextAndLockChanges()
+    {
+        var client = await fixture.NewUserClientAsync();
+        var note = await CreateNoteAsync(client, "Recipe", V2(Paragraph(Text("ᲛᲐᲬᲝᲜᲘ and honey"))));
+        async Task<int> Hits(string q) => (await client.GetFromJsonAsync<JsonElement>($"/api/notes/search?q={Uri.EscapeDataString(q)}")).GetArrayLength();
+
+        Assert.Equal(1, await Hits("მაწონი")); // Georgian capitals (Mtavruli) match their regular letters
+        Assert.Equal(1, await Hits("HONEY"));
+
+        var locked = await Json(await client.PutAsync($"/api/notes/{Id(note)}",
+            Raw($"{{\"title\":\"Dessert\",{Metadata},\"isLocked\":true,\"versionToken\":\"{Token(note)}\"}}")));
+        Assert.Equal(0, await Hits("honey"));
+        Assert.Equal(0, await Hits("recipe"));
+        Assert.Equal(1, await Hits("dessert"));
+
+        await client.PutAsync($"/api/notes/{Id(note)}",
+            Raw($"{{\"title\":\"Dessert\",{Metadata},\"isLocked\":false,\"versionToken\":\"{Token(locked)}\"}}"));
+        Assert.Equal(1, await Hits("honey"));
+
+        var duplicate = await client.PostAsync($"/api/notes/{Id(note)}/duplicate", Raw("{}"));
+        Assert.Equal(HttpStatusCode.Created, duplicate.StatusCode);
+        Assert.Equal(2, await Hits("honey"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("%20%20")]

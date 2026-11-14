@@ -37,7 +37,16 @@ public sealed class Note : BaseEntity
 
     public bool HasChecklist { get; set; }
     public bool HasImage { get; set; }
+
+    /// <summary>
+    /// Lowercased title and preview, which search matches with a plain LIKE (no database extension needed).
+    /// A locked note holds only its title, so its text never shows up in search. Kept current by AppDbContext on save.
+    /// </summary>
+    public string SearchText { get; set; } = string.Empty;
     public User User { get; set; } = default!;
+
+    public static string BuildSearchText(string title, string plainTextPreview, bool isLocked) =>
+        (isLocked ? title : title + "\n" + plainTextPreview).ToLowerInvariant();
 }
 
 public static class NotePaperStyles

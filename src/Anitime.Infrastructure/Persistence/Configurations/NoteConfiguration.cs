@@ -33,6 +33,8 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
         builder.HasIndex(x => x.Tags).HasMethod("gin");
         builder.HasIndex(x => x.LinkedNoteIds).HasMethod("gin");
         builder.HasIndex(x => x.AssetIds).HasMethod("gin");
-        // Search uses a pg_trgm GIN index on ("Title" || ' ' || "PlainTextPreview"), created in migration AddNotesOrganisation.
+        builder.Property(x => x.SearchText).IsRequired().HasDefaultValue(string.Empty);
+        // Search: narrows to one user's live notes newest-first, then a byte-wise LIKE on SearchText; stops at the limit.
+        builder.HasIndex(x => new { x.UserId, x.IsDeleted, x.UpdatedAtUtc });
     }
 }

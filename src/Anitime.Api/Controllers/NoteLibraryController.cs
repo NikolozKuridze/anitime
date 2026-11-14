@@ -212,6 +212,7 @@ public sealed class NoteLibraryController : BaseApiController
 
     /// <summary>
     /// Case-insensitive substring search over title and text (checklists and tables included), for any script.
+    /// Runs as one query over the user's own notes, newest first, using the (UserId, IsDeleted, UpdatedAtUtc) index.
     /// Every word must match. Locked notes match by title only and return no snippet. Recently Deleted is excluded.
     /// </summary>
     [HttpGet("search")]
@@ -236,10 +237,11 @@ public sealed class NoteLibraryController : BaseApiController
         var query = db.Notes.AsNoTracking().Where(n => n.UserId == userId);
         foreach (var term in terms)
         {
-            var pattern = $"%{EscapeLike(term)}%";
-            // The first condition is the indexed expression (pg_trgm GIN on "Title" || ' ' || "PlainTextPreview").
-            query = query.Where(n => EF.Functions.ILike(n.Title + " " + n.PlainTextPreview, pattern, "\\") &&
-                                     (!n.IsLocked || EF.Functions.ILike(n.Title, pattern, "\\")));
+            // SearchText is already lowercase (a locked note's holds only its title), so a plain substring test does the
+            // case-insensitive match. IndexOf becomes strpos(), a fast literal search ('%' and '_' need no escaping)
+            // that is several times quicker than LIKE on UTF-8 text; Contains would become LIKE. No extension needed.
+            var lowered = term.ToLowerInvariant();
+            query = query.Where(n => n.SearchText.IndexOf(lowered) >= 0);
         }
 
         var hits = await query
@@ -288,9 +290,6 @@ public sealed class NoteLibraryController : BaseApiController
 
     private static IQueryable<Note> DeletedNotes(AppDbContext db, Guid userId) =>
         db.Notes.IgnoreQueryFilters().AsNoTracking().Where(n => n.UserId == userId && n.IsDeleted);
-
-    private static string EscapeLike(string value) =>
-        value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
 
     private sealed class TagCountRow
     {

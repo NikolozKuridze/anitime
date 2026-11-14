@@ -68,6 +68,13 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: "plain");
 
+            migrationBuilder.AddColumn<string>(
+                name: "SearchText",
+                table: "notes",
+                type: "text",
+                nullable: false,
+                defaultValue: "");
+
             migrationBuilder.AddColumn<List<string>>(
                 name: "Tags",
                 table: "notes",
@@ -189,6 +196,11 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                 columns: new[] { "UserId", "FolderId" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_notes_UserId_IsDeleted_UpdatedAtUtc",
+                table: "notes",
+                columns: new[] { "UserId", "IsDeleted", "UpdatedAtUtc" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_note_attachments_UnreferencedSinceUtc",
                 table: "note_attachments",
                 column: "UnreferencedSinceUtc");
@@ -221,26 +233,35 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                 principalColumn: "Id",
                 onDelete: ReferentialAction.SetNull);
 
-            // Search: substring match (ILIKE) for any script, Georgian included, served by a trigram index.
-            // pg_trgm is a trusted extension (PostgreSQL 13+), so the database owner can create it.
-            migrationBuilder.Sql("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
-            migrationBuilder.Sql("""
-                CREATE INDEX "IX_notes_search_trgm" ON notes
-                USING gin (("Title" || ' ' || "PlainTextPreview") gin_trgm_ops);
-                """);
-
             // Existing version 1 notes with a checklist, so the "has checklist" smart filter finds them before their next save.
             migrationBuilder.Sql("""
                 UPDATE notes SET "HasChecklist" = true
                 WHERE jsonb_path_exists("ContentJson", 'lax $.** ? (@.type == "checkboxListItem" || @.Type == "checkboxListItem")');
+                """);
+
+            // Search reads SearchText for every note it scans; lz4 decompresses several times faster than the default pglz.
+            // A core column setting (PostgreSQL 14+ built with lz4, as the official images are), not an extension;
+            // where lz4 isn't available the column simply keeps pglz.
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    ALTER TABLE notes ALTER COLUMN "SearchText" SET COMPRESSION lz4;
+                EXCEPTION WHEN feature_not_supported OR invalid_parameter_value OR syntax_error THEN
+                    RAISE NOTICE 'lz4 compression is not available; SearchText keeps the default compression.';
+                END
+                $$;
+                """);
+
+            // Search text for existing notes (none are locked yet). Later saves recompute it in .NET (Note.BuildSearchText).
+            // Plain SQL only: no extension is created or needed.
+            migrationBuilder.Sql("""
+                UPDATE notes SET "SearchText" = lower("Title" || E'\n' || "PlainTextPreview");
                 """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_notes_search_trgm\";");
-
             migrationBuilder.DropForeignKey(
                 name: "FK_notes_note_folders_FolderId",
                 table: "notes");
@@ -278,6 +299,10 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                 name: "IX_notes_UserId_FolderId",
                 table: "notes");
 
+            migrationBuilder.DropIndex(
+                name: "IX_notes_UserId_IsDeleted_UpdatedAtUtc",
+                table: "notes");
+
             migrationBuilder.DropColumn(
                 name: "AssetIds",
                 table: "notes");
@@ -308,6 +333,10 @@ namespace Anitime.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropColumn(
                 name: "PaperStyle",
+                table: "notes");
+
+            migrationBuilder.DropColumn(
+                name: "SearchText",
                 table: "notes");
 
             migrationBuilder.DropColumn(

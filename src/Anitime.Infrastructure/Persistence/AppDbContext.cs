@@ -48,6 +48,15 @@ public sealed class AppDbContext : DbContext
 
     private void ApplySoftDeleteBehavior()
     {
+        foreach (var entry in ChangeTracker.Entries<Note>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                var note = entry.Entity;
+                note.SearchText = Note.BuildSearchText(note.Title, note.PlainTextPreview, note.IsLocked);
+            }
+        }
+
         var utcNow = DateTime.UtcNow;
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
