@@ -38,13 +38,38 @@ public sealed class NotesV2ApiTests(ApiFixture fixture)
 
     private static StringContent Raw(string json) => new(json, Encoding.UTF8, "application/json");
 
-    private static Task<HttpResponseMessage> PostAsync(HttpClient client, string json) => client.PostAsync("/api/notes", Raw(json));
+    // Image nodes must reference the user's own uploads (P2), so the fixed placeholder id is swapped for a real upload.
+    private const string PlaceholderAssetId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+    private const string PlaceholderAsset = "\"assetId\":\"" + PlaceholderAssetId + "\"";
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<HttpClient, string> UploadedAssets = new();
 
-    private static Task<HttpResponseMessage> PatchAsync(HttpClient client, string id, string json) =>
-        client.PatchAsync($"/api/notes/{id}/content", Raw(json));
+    private static async Task<string> WithOwnImagesAsync(HttpClient client, string json)
+    {
+        if (!json.Contains(PlaceholderAsset, StringComparison.Ordinal))
+        {
+            return json;
+        }
 
-    private static Task<HttpResponseMessage> PutAsync(HttpClient client, string id, string json) =>
-        client.PutAsync($"/api/notes/{id}", Raw(json));
+        if (!UploadedAssets.TryGetValue(client, out var assetId))
+        {
+            var file = new ByteArrayContent([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13]);
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+            var upload = await client.PostAsync("/api/notes/attachments", new MultipartFormDataContent { { file, "file", "p.png" } });
+            assetId = (await Json(upload)).GetProperty("assetId").GetString()!;
+            UploadedAssets.AddOrUpdate(client, assetId);
+        }
+
+        return json.Replace(PlaceholderAsset, "\"assetId\":\"" + assetId + "\"", StringComparison.Ordinal);
+    }
+
+    private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string json) =>
+        await client.PostAsync("/api/notes", Raw(await WithOwnImagesAsync(client, json)));
+
+    private static async Task<HttpResponseMessage> PatchAsync(HttpClient client, string id, string json) =>
+        await client.PatchAsync($"/api/notes/{id}/content", Raw(await WithOwnImagesAsync(client, json)));
+
+    private static async Task<HttpResponseMessage> PutAsync(HttpClient client, string id, string json) =>
+        await client.PutAsync($"/api/notes/{id}", Raw(await WithOwnImagesAsync(client, json)));
 
     private static Task<JsonElement> Json(HttpResponseMessage response) => response.Content.ReadFromJsonAsync<JsonElement>();
 
@@ -232,7 +257,7 @@ public sealed class NotesV2ApiTests(ApiFixture fixture)
         var content = stored.GetProperty("contentJson");
         Assert.Equal(2, content.GetProperty("version").GetInt32());
         Assert.False(content.TryGetProperty("blocks", out _));
-        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(EveryNodeType), JsonNode.Parse(content.GetProperty("content").GetRawText())));
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(await WithOwnImagesAsync(client, EveryNodeType)), JsonNode.Parse(content.GetProperty("content").GetRawText())));
     }
 
     [Fact]

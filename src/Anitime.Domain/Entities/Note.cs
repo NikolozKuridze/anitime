@@ -15,5 +15,36 @@ public sealed class Note : BaseEntity
     public bool IsArchived { get; set; }
     public string VersionToken { get; set; } = Guid.NewGuid().ToString("N");
     public DateTime? LastEditedAtUtc { get; set; }
+
+    /// <summary>Null means "no folder". Moving a note doesn't rotate <see cref="VersionToken"/>.</summary>
+    public Guid? FolderId { get; set; }
+
+    /// <summary>Hides the note behind Face ID in the app; the content is not encrypted and still syncs.</summary>
+    public bool IsLocked { get; set; }
+
+    public string PaperStyle { get; set; } = NotePaperStyles.Plain;
+
+    /// <summary>Tags the user typed as <c>#tag</c> in the content plus <see cref="ExplicitTags"/>, normalized and sorted.</summary>
+    public List<string> Tags { get; set; } = [];
+
+    public List<string> ExplicitTags { get; set; } = [];
+
+    /// <summary>Ids from <c>anitime-note:</c> links in the content (for backlinks).</summary>
+    public List<Guid> LinkedNoteIds { get; set; } = [];
+
+    /// <summary>Attachment ids used by image nodes (for orphan cleanup).</summary>
+    public List<Guid> AssetIds { get; set; } = [];
+
+    public bool HasChecklist { get; set; }
+    public bool HasImage { get; set; }
     public User User { get; set; } = default!;
+}
+
+public static class NotePaperStyles
+{
+    public const string Plain = "plain";
+    public const string Lines = "lines";
+    public const string Grid = "grid";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { Plain, Lines, Grid };
 }

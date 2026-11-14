@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Anitime.Application.Rules;
 using Anitime.Contracts;
+using Anitime.Domain.Entities;
 using FluentValidation;
 
 namespace Anitime.Application.Validation;
@@ -45,6 +46,10 @@ public sealed class CreateNoteRequestValidator : AbstractValidator<CreateNoteReq
         RuleFor(x => x.FontFamily).MaximumLength(64);
         RuleFor(x => x.FontSize).InclusiveBetween(10, 48);
         RuleFor(x => x.FontWeight).InclusiveBetween(100, 900);
+        RuleFor(x => x.PaperStyle).Must(style => style is null || NotePaperStyles.All.Contains(style))
+            .WithMessage("PaperStyle must be plain, lines or grid.");
+        RuleFor(x => x.Tags).Must(NoteValidationRules.BeValidTags!).WithMessage(NoteValidationRules.TagsMessage)
+            .When(x => x.Tags is not null);
         RuleFor(x => x.TextColor).Must(NoteValidationRules.BeValidColor).WithMessage("TextColor must be a valid HEX color.")
             .When(x => !string.IsNullOrWhiteSpace(x.TextColor));
         RuleFor(x => x.BackgroundColor).Must(NoteValidationRules.BeValidColor).WithMessage("BackgroundColor must be a valid HEX color or transparent.")
@@ -73,6 +78,10 @@ public sealed class UpdateNoteRequestValidator : AbstractValidator<UpdateNoteReq
         RuleFor(x => x.FontFamily).MaximumLength(64);
         RuleFor(x => x.FontSize).InclusiveBetween(10, 48);
         RuleFor(x => x.FontWeight).InclusiveBetween(100, 900);
+        RuleFor(x => x.PaperStyle).Must(style => style is null || NotePaperStyles.All.Contains(style))
+            .WithMessage("PaperStyle must be plain, lines or grid.");
+        RuleFor(x => x.Tags).Must(NoteValidationRules.BeValidTags!).WithMessage(NoteValidationRules.TagsMessage)
+            .When(x => x.Tags is not null);
         RuleFor(x => x.VersionToken).NotEmpty().MaximumLength(64);
         RuleFor(x => x.TextColor).Must(NoteValidationRules.BeValidColor).WithMessage("TextColor must be a valid HEX color.")
             .When(x => !string.IsNullOrWhiteSpace(x.TextColor));
@@ -106,7 +115,15 @@ public static class NoteValidationRules
         _ => !string.IsNullOrWhiteSpace(clientPreview) || (document?.Blocks?.Count ?? 0) > 0
     };
 
+    public static readonly string TagsMessage =
+        $"Tags must be at most {NoteContentIndex.MaxExplicitTags} single words of letters, digits, '_' or '-' (with at least one letter), up to {NoteContentIndex.MaxTagLength} characters.";
+
+    /// <summary>Hex, "transparent", or one of Apple's five note colours (pink, purple, orange, mint, blue).</summary>
     public static bool BeValidColor(string? value) =>
         string.IsNullOrWhiteSpace(value) ||
+        RichNoteV2Schema.Palette.Contains(value.Trim()) ||
         Regex.IsMatch(value, "^(transparent|#([0-9a-fA-F]{6}|[0-9a-fA-F]{8}))$", RegexOptions.CultureInvariant);
+
+    public static bool BeValidTags(IReadOnlyList<string> tags) =>
+        tags.Count <= NoteContentIndex.MaxExplicitTags && tags.All(tag => NoteContentIndex.NormalizeTag(tag) is not null);
 }

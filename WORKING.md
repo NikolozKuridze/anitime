@@ -9,6 +9,9 @@ Query-count budgets, timing benchmark, SQL aggregates for dashboard/analytics/ca
 ## In progress (2026-11-14): Notes v2, phase P0, on branch `notes-v2`
 Strict note contracts, document version 2 with server validation and preview, old-client guard (`409 note_format_too_new`), `note_content_backups` (migration `AddNoteContentBackups`), `GET /api/app/config`. Not merged; deploy only together with or before the app build that writes v2. Set `MIN_IOS_BUILD` / `MIN_APP_VERSION` in the server `.env` when the owner wants to force updates. See PROJECT.md §10 "Notes v2".
 
+## In progress (2026-11-15): Notes P2/P3 on branch `notes-v2-p2` (from `notes-v2`)
+Folders, tags, smart folders, Recently Deleted + 30-day purge, edit-clash copies, image attachments + 7-day orphan cleanup, search, lock/paper/palette colours, backlinks, `iosStoreUrl` in app config. Migration `AddNotesOrganisation` (additive; creates the pg_trgm extension and backfills `HasChecklist` for v1 notes). Not merged. Set `IOS_STORE_URL` in the server `.env` when the App Store link exists. See PROJECT.md §10 "Notes P2/P3".
+
 ## Next (not started)
 - Cycle/period tracking (waits for the redesign). Fits as a per-user, per-day entity: `CycleDay` (`UserId`, `Date`, flow, symptoms, note) with a unique `(UserId, Date)` index, a `GET /api/cycle?from=&to=` range endpoint marked `[ConditionalGet]`, and optional per-day counts merged into `CalendarController`.
 

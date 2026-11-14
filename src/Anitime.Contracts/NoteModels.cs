@@ -53,9 +53,15 @@ public sealed record CreateNoteRequest(
     string? BackgroundColor,
     bool IsPinned,
     bool IsArchived,
-    string? VersionToken = null);
+    string? VersionToken = null,
+    Guid? FolderId = null,
+    bool? IsLocked = null,
+    string? PaperStyle = null,
+    IReadOnlyList<string>? Tags = null);
 
 /// <param name="ContentJson">When omitted together with PlainTextPreview, the stored content is kept (metadata-only update).</param>
+/// <param name="IsLocked">Omitted or null keeps the stored value (installed app builds don't send it). The same goes for PaperStyle and Tags.</param>
+/// <param name="Tags">The explicit tags, replacing the stored ones. Tags typed as #tag in the content are added by the server.</param>
 public sealed record UpdateNoteRequest(
     string? Title,
     RichNoteDocument? ContentJson,
@@ -67,7 +73,10 @@ public sealed record UpdateNoteRequest(
     string? BackgroundColor,
     bool IsPinned,
     bool IsArchived,
-    string VersionToken);
+    string VersionToken,
+    bool? IsLocked = null,
+    string? PaperStyle = null,
+    IReadOnlyList<string>? Tags = null);
 
 public sealed record UpdateNoteContentRequest(
     RichNoteDocument ContentJson,
@@ -89,7 +98,14 @@ public sealed record NoteSummaryResponse(
     string VersionToken,
     DateTime? LastEditedAtUtc,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    Guid? FolderId,
+    bool IsLocked,
+    string PaperStyle,
+    IReadOnlyList<string> Tags,
+    IReadOnlyList<string> ExplicitTags,
+    bool HasChecklist,
+    bool HasImage);
 
 public sealed record NoteResponse(
     Guid Id,
@@ -106,7 +122,14 @@ public sealed record NoteResponse(
     string VersionToken,
     DateTime? LastEditedAtUtc,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    Guid? FolderId,
+    bool IsLocked,
+    string PaperStyle,
+    IReadOnlyList<string> Tags,
+    IReadOnlyList<string> ExplicitTags,
+    bool HasChecklist,
+    bool HasImage);
 
 /// <summary>The note request and document types whose JSON must not carry unknown members (they give 400, never a silent drop).</summary>
 public static class NoteContractTypes
@@ -115,6 +138,8 @@ public static class NoteContractTypes
     {
         typeof(CreateNoteRequest), typeof(UpdateNoteRequest), typeof(UpdateNoteContentRequest),
         typeof(RichNoteDocument), typeof(RichTextBlockNode), typeof(RichTextNode), typeof(RichTextTextNode), typeof(RichTextMark),
-        typeof(RichNoteNodeV2), typeof(RichNoteMarkV2)
+        typeof(RichNoteNodeV2), typeof(RichNoteMarkV2),
+        typeof(CreateNoteFolderRequest), typeof(UpdateNoteFolderRequest), typeof(MoveNotesRequest),
+        typeof(SaveSmartFolderRequest), typeof(SmartFolderFilter), typeof(ConflictCopyRequest)
     };
 }

@@ -172,3 +172,12 @@ dotnet test                        # Application.Tests (rules + validators) and 
 - A version 1 write over a stored version 2 note returns `409 note_format_too_new`. The first version 2 write over a version 1 note copies the old content into `note_content_backups` in the same save.
 - `GET /api/app/config` (anonymous) returns `{minIosBuild, minAppVersion}` from `ClientApp:*` (env `MIN_IOS_BUILD`, `MIN_APP_VERSION`; defaults 0 / 0.0.0).
 - Not yet: image `assetId` ownership (no attachments until P2), backup retention (plan says 90 days; nothing deletes them yet).
+
+**Notes P2/P3 (branch `notes-v2-p2`, migration `AddNotesOrganisation`):**
+- Folders (`NoteFoldersController`, `note_folders`): two levels; deleting a folder unfiles its notes (or `?deleteNotes=true` sends them to Recently Deleted) and promotes subfolders. `POST /api/notes/move` files notes without rotating version tokens.
+- Note columns derived on every content save by `Application/Rules/NoteContentIndex.cs` (via `Api/Infrastructure/NoteContentWriter.cs`): `Tags` (typed #tags from v2 text + `ExplicitTags`), `LinkedNoteIds` (`anitime-note:` links → backlinks), `AssetIds` (image nodes → ownership check and orphan cleanup), `HasChecklist`, `HasImage`. Array columns have GIN indexes; filters are written so Npgsql emits `<@` / `&&` (`NoteQueries`).
+- Metadata: `FolderId`, `IsLocked` (UI lock only; content still syncs; search matches locked notes by title only), `PaperStyle` (plain/lines/grid). Note colours accept Apple's palette names. `PUT` keeps fields it doesn't receive (installed apps).
+- Smart folders (`smart_folders`, filter JSON) are evaluated by the server: `GET /api/notes?smartFolderId=`.
+- Recently Deleted = the existing soft delete. `/api/notes/deleted`, `/deleted/{id}`, `/{id}/restore`, `/{id}/forever`; `/{id}/conflict-copy` saves the unchosen side of a 409 straight into it. The worker (`NotesMaintenanceWorker`, hourly) purges after 30 days and deletes images unreferenced for 7 days (`Infrastructure/Notes/NotesMaintenance.cs`).
+- Attachments (`note_attachments`, MinIO `users/{id}/notes/`): upload, then a 10-minute HMAC-signed URL (`AttachmentUrlSigner`, key derived from the JWT key with HKDF).
+- Search: `GET /api/notes/search?q=`, ILIKE per word over `"Title" || ' ' || "PlainTextPreview"` with a pg_trgm GIN index (raw SQL in the migration). Chosen over full-text search because Postgres has no Georgian dictionary and substring/partial-word matching is what an as-you-type search needs.

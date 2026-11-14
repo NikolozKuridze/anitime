@@ -40,7 +40,7 @@ public sealed class NoteValidatorTests
             "Georgia",
             16,
             400,
-            "blue",
+            "navy",
             "paper",
             false,
             false);

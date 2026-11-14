@@ -21,5 +21,18 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
         builder.HasIndex(x => new { x.UserId, x.IsPinned, x.UpdatedAtUtc });
         builder.HasIndex(x => new { x.UserId, x.IsArchived, x.UpdatedAtUtc });
         builder.HasIndex(x => new { x.UserId, x.VersionToken });
+        builder.Property(x => x.PaperStyle).HasMaxLength(16).IsRequired().HasDefaultValue(NotePaperStyles.Plain);
+        builder.Property(x => x.Tags).IsRequired().HasDefaultValueSql("'{}'::text[]");
+        builder.Property(x => x.ExplicitTags).IsRequired().HasDefaultValueSql("'{}'::text[]");
+        builder.Property(x => x.LinkedNoteIds).IsRequired().HasDefaultValueSql("'{}'::uuid[]");
+        builder.Property(x => x.AssetIds).IsRequired().HasDefaultValueSql("'{}'::uuid[]");
+        builder.HasOne<NoteFolder>().WithMany().HasForeignKey(x => x.FolderId).OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(x => new { x.UserId, x.FolderId });
+        builder.HasIndex(x => new { x.IsDeleted, x.DeletedAtUtc });
+        builder.HasIndex(x => x.Tags).HasMethod("gin");
+        builder.HasIndex(x => x.LinkedNoteIds).HasMethod("gin");
+        builder.HasIndex(x => x.AssetIds).HasMethod("gin");
+        // Search uses a pg_trgm GIN index on ("Title" || ' ' || "PlainTextPreview"), created in migration AddNotesOrganisation.
     }
 }

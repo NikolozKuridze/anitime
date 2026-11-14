@@ -14,5 +14,5 @@ public sealed class AppConfigController : BaseApiController
     [HttpGet("config")]
     [ProducesResponseType(typeof(AppConfigResponse), StatusCodes.Status200OK)]
     public IActionResult Get([FromServices] IOptionsSnapshot<ClientAppOptions> options) =>
-        Ok(new AppConfigResponse(options.Value.MinIosBuild, options.Value.MinAppVersion));
+        Ok(new AppConfigResponse(options.Value.MinIosBuild, options.Value.MinAppVersion, options.Value.IosStoreUrl));
 }

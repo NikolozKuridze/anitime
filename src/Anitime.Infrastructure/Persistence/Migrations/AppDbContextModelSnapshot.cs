@@ -232,6 +232,12 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.PrimitiveCollection<List<Guid>>("AssetIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
                     b.Property<string>("BackgroundColor")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -247,6 +253,15 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.PrimitiveCollection<List<string>>("ExplicitTags")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'::text[]");
+
+                    b.Property<Guid?>("FolderId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FontFamily")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -258,10 +273,19 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.Property<int>("FontWeight")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("HasChecklist")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("HasImage")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsLocked")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsPinned")
@@ -270,10 +294,29 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("LastEditedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.PrimitiveCollection<List<Guid>>("LinkedNoteIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
+                    b.Property<string>("PaperStyle")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("plain");
+
                     b.Property<string>("PlainTextPreview")
                         .IsRequired()
                         .HasMaxLength(50000)
                         .HasColumnType("character varying(50000)");
+
+                    b.PrimitiveCollection<List<string>>("Tags")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'::text[]");
 
                     b.Property<string>("TextColor")
                         .IsRequired()
@@ -299,6 +342,24 @@ namespace Anitime.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssetIds");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("AssetIds"), "gin");
+
+                    b.HasIndex("FolderId");
+
+                    b.HasIndex("LinkedNoteIds");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("LinkedNoteIds"), "gin");
+
+                    b.HasIndex("Tags");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Tags"), "gin");
+
+                    b.HasIndex("IsDeleted", "DeletedAtUtc");
+
+                    b.HasIndex("UserId", "FolderId");
+
                     b.HasIndex("UserId", "VersionToken");
 
                     b.HasIndex("UserId", "IsArchived", "UpdatedAtUtc");
@@ -306,6 +367,52 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "IsPinned", "UpdatedAtUtc");
 
                     b.ToTable("notes", (string)null);
+                });
+
+            modelBuilder.Entity("Anitime.Domain.Entities.NoteAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ObjectName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("UnreferencedSinceUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UnreferencedSinceUtc");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("note_attachments", (string)null);
                 });
 
             modelBuilder.Entity("Anitime.Domain.Entities.NoteContentBackup", b =>
@@ -348,6 +455,44 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "NoteId");
 
                     b.ToTable("note_content_backups", (string)null);
+                });
+
+            modelBuilder.Entity("Anitime.Domain.Entities.NoteFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("UserId", "ParentId");
+
+                    b.ToTable("note_folders", (string)null);
                 });
 
             modelBuilder.Entity("Anitime.Domain.Entities.PasswordResetToken", b =>
@@ -494,6 +639,43 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "ScheduledForUtc");
 
                     b.ToTable("reminders", (string)null);
+                });
+
+            modelBuilder.Entity("Anitime.Domain.Entities.SmartFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FilterJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("smart_folders", (string)null);
                 });
 
             modelBuilder.Entity("Anitime.Domain.Entities.TaskItem", b =>
@@ -773,6 +955,11 @@ namespace Anitime.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Anitime.Domain.Entities.Note", b =>
                 {
+                    b.HasOne("Anitime.Domain.Entities.NoteFolder", null)
+                        .WithMany()
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Anitime.Domain.Entities.User", "User")
                         .WithMany("Notes")
                         .HasForeignKey("UserId")
@@ -782,11 +969,34 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Anitime.Domain.Entities.NoteAttachment", b =>
+                {
+                    b.HasOne("Anitime.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Anitime.Domain.Entities.NoteContentBackup", b =>
                 {
                     b.HasOne("Anitime.Domain.Entities.Note", null)
                         .WithMany()
                         .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Anitime.Domain.Entities.NoteFolder", b =>
+                {
+                    b.HasOne("Anitime.Domain.Entities.NoteFolder", null)
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Anitime.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -822,6 +1032,15 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Anitime.Domain.Entities.SmartFolder", b =>
+                {
+                    b.HasOne("Anitime.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Anitime.Domain.Entities.TaskItem", b =>

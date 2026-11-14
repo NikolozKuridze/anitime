@@ -5,6 +5,7 @@ using Anitime.Infrastructure.Auth;
 using Anitime.Infrastructure.Caching;
 using Anitime.Infrastructure.Email;
 using Anitime.Infrastructure.Messaging;
+using Anitime.Infrastructure.Notes;
 using Anitime.Infrastructure.Notifications;
 using Anitime.Infrastructure.Options;
 using Anitime.Infrastructure.Persistence;
@@ -54,6 +55,7 @@ public static class DependencyInjection
         services.AddSingleton<IReminderPublisher, RabbitMqReminderPublisher>();
         services.AddSingleton<IPushNotificationSender, LoggingPushNotificationSender>();
         services.AddSingleton<IFileStorageService, MinioFileStorageService>();
+        services.AddSingleton<IAttachmentUrlSigner, AttachmentUrlSigner>();
 
         return services;
     }

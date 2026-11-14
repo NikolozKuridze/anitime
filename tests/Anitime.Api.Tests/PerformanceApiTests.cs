@@ -35,6 +35,13 @@ public sealed class PerformanceApiTests(ApiFixture fixture, ITestOutputHelper ou
         ["reminders"] = ("/api/reminders", 1),
         ["notes"] = ("/api/notes", 1),
         ["notes (summary view)"] = ("/api/notes?view=summary", 1),
+        ["notes (folder filter)"] = ("/api/notes?folderId=none&view=summary", 1),
+        ["notes (tag filter)"] = ("/api/notes?tag=lorem&view=summary", 1),
+        ["note folders"] = ("/api/notes/folders", 1),
+        ["note tags"] = ("/api/notes/tags", 1),
+        ["smart folders"] = ("/api/notes/smart-folders", 1),
+        ["recently deleted"] = ("/api/notes/deleted", 1),
+        ["note search"] = ("/api/notes/search?q=ipsum%20dolor", 1),
         ["exercises"] = ("/api/exercises?page=1&pageSize=20", 2),
         ["workouts"] = ("/api/workouts", 1)
     };
@@ -263,10 +270,12 @@ public sealed class PerformanceApiTests(ApiFixture fixture, ITestOutputHelper ou
 
         var note = (await client.GetFromJsonAsync<JsonElement>("/api/notes"))[0];
 
+        // The original fields keep their names and order; P2 fields are only appended (installed apps ignore them).
         var expected = new[]
         {
             "id", "title", "contentJson", "plainTextPreview", "fontFamily", "fontSize", "fontWeight", "textColor",
-            "backgroundColor", "isPinned", "isArchived", "versionToken", "lastEditedAtUtc", "createdAtUtc", "updatedAtUtc"
+            "backgroundColor", "isPinned", "isArchived", "versionToken", "lastEditedAtUtc", "createdAtUtc", "updatedAtUtc",
+            "folderId", "isLocked", "paperStyle", "tags", "explicitTags", "hasChecklist", "hasImage"
         };
         Assert.Equal(expected, note.EnumerateObject().Select(p => p.Name));
         Assert.Equal(1, note.GetProperty("contentJson").GetProperty("version").GetInt32());
@@ -418,6 +427,35 @@ public sealed class PerformanceApiTests(ApiFixture fixture, ITestOutputHelper ou
         {
             await File.WriteAllTextAsync(outPath, report.ToString());
         }
+    }
+
+    [Fact]
+    public async Task SmartFolderAndBacklinks_StayWithinTwoQueries_AndUseTheArrayIndexes()
+    {
+        var (client, userId) = await UserAsync(large: true);
+        var smart = await (await client.PostAsJsonAsync("/api/notes/smart-folders",
+            new { name = "s", filter = new { tags = new[] { "lorem", "ipsum" }, tagMode = "any", hasChecklist = false } })).Content.ReadFromJsonAsync<JsonElement>();
+        var noteId = (await client.GetFromJsonAsync<JsonElement>("/api/notes?view=summary"))[0].GetProperty("id").GetString();
+
+        var smartQueries = await CountAsync(client, userId, $"/api/notes?smartFolderId={smart.GetProperty("id").GetString()}&view=summary");
+        var tagQueries = await CountAsync(client, userId, "/api/notes?tag=lorem&view=summary");
+        var backlinkQueries = await CountAsync(client, userId, $"/api/notes/{noteId}/backlinks");
+
+        Assert.True(smartQueries.Count <= 2, smartQueries.ToString());
+        Assert.True(backlinkQueries.Count <= 2, backlinkQueries.ToString());
+        Assert.Contains(smartQueries.Commands, sql => sql.Contains("&&", StringComparison.Ordinal));
+        Assert.Contains(tagQueries.Commands, sql => sql.Contains("<@", StringComparison.Ordinal));
+        Assert.Contains(backlinkQueries.Commands, sql => sql.Contains("<@", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Search_UsesTheTrigramIndexedExpression()
+    {
+        var (client, userId) = await UserAsync(large: true);
+
+        var queries = await CountAsync(client, userId, "/api/notes/search?q=dolor");
+
+        Assert.Contains(queries.Commands, sql => sql.Contains("n.\"Title\" || ' ' || n.\"PlainTextPreview\" ILIKE", StringComparison.Ordinal));
     }
 }
 

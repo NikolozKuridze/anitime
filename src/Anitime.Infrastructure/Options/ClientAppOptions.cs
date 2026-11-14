@@ -11,4 +11,7 @@ public sealed class ClientAppOptions
     public int MinIosBuild { get; set; }
 
     public string MinAppVersion { get; set; } = "0.0.0";
+
+    /// <summary>App Store link for the update prompt (env IOS_STORE_URL); empty when not set.</summary>
+    public string IosStoreUrl { get; set; } = string.Empty;
 }

@@ -4,6 +4,7 @@ using Anitime.Application.Abstractions;
 using Anitime.Application.Rules;
 using Anitime.Contracts;
 using Anitime.Infrastructure;
+using Anitime.Infrastructure.Notes;
 using Anitime.Infrastructure.Notifications;
 using Anitime.Infrastructure.Options;
 using Anitime.Infrastructure.Persistence;
@@ -18,6 +19,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<ReminderDispatchWorker>();
 builder.Services.AddHostedService<ReminderNotificationConsumer>();
+builder.Services.AddHostedService<NotesMaintenanceWorker>();
 
 var host = builder.Build();
 
@@ -125,6 +127,51 @@ public sealed class ReminderDispatchWorker : BackgroundService
             {
                 _logger.LogError(ex, "Failed to dispatch reminders.");
             }
+        }
+    }
+}
+
+/// <summary>Hourly: deletes notes 30 days in Recently Deleted, and note images unused for 7 days.</summary>
+public sealed class NotesMaintenanceWorker(IServiceScopeFactory scopeFactory, ILogger<NotesMaintenanceWorker> logger) : BackgroundService
+{
+    private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(StartupDelay, stoppingToken);
+            using var timer = new PeriodicTimer(Interval);
+            do
+            {
+                await RunOnceAsync(stoppingToken);
+            }
+            while (await timer.WaitForNextTickAsync(stoppingToken));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RunOnceAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var now = scope.ServiceProvider.GetRequiredService<IClock>().UtcNow;
+            var purged = await NotesMaintenance.PurgeDeletedNotesAsync(db, now, stoppingToken);
+            var images = await NotesMaintenance.CleanUpOrphanAttachmentsAsync(
+                db, scope.ServiceProvider.GetRequiredService<IFileStorageService>(), now, stoppingToken);
+            if (purged > 0 || images > 0)
+            {
+                logger.LogInformation("Notes maintenance: purged {Notes} deleted notes and {Images} unused images.", purged, images);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Notes maintenance failed; retrying next hour.");
         }
     }
 }

@@ -1,6 +1,9 @@
+using System.Text.Json;
 using Anitime.Api.Infrastructure;
+using Anitime.Api.Mapping;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Common;
+using Anitime.Application.Rules;
 using Anitime.Application.Validation;
 using Anitime.Contracts;
 using Anitime.Domain.Entities;
@@ -9,9 +12,6 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Text;
-using System.Text.Json;
-using Anitime.Application.Rules;
 
 namespace Anitime.Api.Controllers;
 
@@ -20,22 +20,25 @@ namespace Anitime.Api.Controllers;
 [Route("api/notes")]
 public sealed class NotesController : BaseApiController
 {
-    private const int MaxTitleLength = 160;
-    private const int MaxPlainTextPreviewLength = 50_000;
     private const string CopySuffix = " (Copy)";
     private const string VersionConflictMessage = "Note was changed by another request. Refresh and retry.";
-    private const string ContentTooLargeMessage = "Note content is too large. Maximum size is 2 MB.";
-
-    // Notes migrated from the pre-rich-text schema were stored with camelCase keys; new ones use PascalCase.
     private const string SummaryView = "summary";
-    private static readonly JsonSerializerOptions ContentReadOptions = new() { PropertyNameCaseInsensitive = true };
+    private const string NoFolder = "none";
 
+    /// <param name="folderId">A folder id, or "none" for notes outside any folder.</param>
+    /// <param name="tag">Notes carrying this tag ("#work" and "work" are the same).</param>
+    /// <param name="smartFolderId">Notes matching that saved filter, evaluated by the server.</param>
     [HttpGet]
     [ConditionalGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<NoteResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(
         [FromQuery] bool includeArchived,
         [FromQuery] string? view,
+        [FromQuery] string? folderId,
+        [FromQuery] string? tag,
+        [FromQuery] Guid? smartFolderId,
         [FromServices] AppDbContext db,
         [FromServices] IUserContext userContext,
         CancellationToken cancellationToken)
@@ -48,6 +51,46 @@ public sealed class NotesController : BaseApiController
             query = query.Where(x => !x.IsArchived);
         }
 
+        if (folderId is not null)
+        {
+            if (string.Equals(folderId, NoFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(x => x.FolderId == null);
+            }
+            else if (Guid.TryParse(folderId, out var folder))
+            {
+                query = query.Where(x => x.FolderId == folder);
+            }
+            else
+            {
+                return FromResult(Result.Failure(AppErrors.InvalidRequest("folderId must be a folder id or \"none\".")));
+            }
+        }
+
+        if (tag is not null)
+        {
+            if (NoteContentIndex.NormalizeTag(tag) is not { } normalized)
+            {
+                return FromResult(Result.Failure(AppErrors.InvalidRequest("tag is not a valid tag.")));
+            }
+
+            query = NoteQueries.WithAllTags(query, [normalized]);
+        }
+
+        if (smartFolderId is not null)
+        {
+            var filterJson = await db.SmartFolders.AsNoTracking()
+                .Where(x => x.Id == smartFolderId && x.UserId == userId)
+                .Select(x => x.FilterJson)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (filterJson is null)
+            {
+                return FromResult(Result.Failure(AppErrors.NotFound("Smart folder was not found.")));
+            }
+
+            query = NoteQueries.Apply(query, JsonSerializer.Deserialize<SmartFolderFilter>(filterJson)!);
+        }
+
         query = query.OrderByDescending(x => x.IsPinned).ThenByDescending(x => x.UpdatedAtUtc);
 
         if (string.Equals(view, SummaryView, StringComparison.OrdinalIgnoreCase))
@@ -56,13 +99,14 @@ public sealed class NotesController : BaseApiController
             var summaries = await query
                 .Select(x => new NoteSummaryResponse(
                     x.Id, x.Title, x.PlainTextPreview, x.FontFamily, x.FontSize, x.FontWeight, x.TextColor, x.BackgroundColor,
-                    x.IsPinned, x.IsArchived, x.VersionToken, x.LastEditedAtUtc, x.CreatedAtUtc, x.UpdatedAtUtc))
+                    x.IsPinned, x.IsArchived, x.VersionToken, x.LastEditedAtUtc, x.CreatedAtUtc, x.UpdatedAtUtc,
+                    x.FolderId, x.IsLocked, x.PaperStyle, x.Tags, x.ExplicitTags, x.HasChecklist, x.HasImage))
                 .ToListAsync(cancellationToken);
             return Ok(summaries);
         }
 
         var items = await query.ToListAsync(cancellationToken);
-        return Ok(items.Select(Map).ToList());
+        return Ok(items.Select(NoteMappings.ToResponse).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -84,12 +128,13 @@ public sealed class NotesController : BaseApiController
             return FromResult(Result<NoteResponse>.Failure(AppErrors.NotFound("Note was not found.")));
         }
 
-        return FromResult(Result<NoteResponse>.Success(Map(note)));
+        return FromResult(Result<NoteResponse>.Success(NoteMappings.ToResponse(note)));
     }
 
     [HttpPost]
     [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status413PayloadTooLarge)]
     public async Task<IActionResult> Create(
         [FromBody] CreateNoteRequest request,
         [FromServices] IValidator<CreateNoteRequest> validator,
@@ -104,16 +149,20 @@ public sealed class NotesController : BaseApiController
             return validationResponse;
         }
 
-        var content = PrepareContent(request.ContentJson, request.PlainTextPreview);
-        if (content.Error is not null)
+        var userId = userContext.GetRequiredUserId();
+        var content = NoteContentWriter.Prepare(request.ContentJson, request.PlainTextPreview);
+        var error = content.Error
+            ?? await NoteQueries.CheckFolderAsync(db, userId, request.FolderId, cancellationToken)
+            ?? await NoteContentWriter.CheckAssetsAsync(db, userId, content.Facts, cancellationToken);
+        if (error is not null)
         {
-            return FromResult(Result<NoteResponse>.Failure(content.Error));
+            return FromResult(Result<NoteResponse>.Failure(error));
         }
 
         var now = clock.UtcNow;
         var note = new Note
         {
-            UserId = userContext.GetRequiredUserId(),
+            UserId = userId,
             Title = NormalizeTitle(request.Title),
             ContentJson = content.Json,
             PlainTextPreview = content.Preview,
@@ -124,22 +173,28 @@ public sealed class NotesController : BaseApiController
             BackgroundColor = NormalizeBackgroundColor(request.BackgroundColor),
             IsPinned = request.IsPinned,
             IsArchived = request.IsArchived,
-            VersionToken = NewVersionToken(),
+            FolderId = request.FolderId,
+            IsLocked = request.IsLocked ?? false,
+            PaperStyle = request.PaperStyle ?? NotePaperStyles.Plain,
+            ExplicitTags = NoteContentWriter.NormalizeTags(request.Tags ?? []),
+            VersionToken = NoteContentWriter.NewVersionToken(),
             LastEditedAtUtc = now,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
+        NoteContentWriter.ApplyFacts(note, content.Facts);
 
         db.Notes.Add(note);
         await db.SaveChangesAsync(cancellationToken);
 
-        return FromCreatedResult($"/api/notes/{note.Id}", Result<NoteResponse>.Success(Map(note)));
+        return FromCreatedResult($"/api/notes/{note.Id}", Result<NoteResponse>.Success(NoteMappings.ToResponse(note)));
     }
 
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateNoteRequest request,
@@ -166,7 +221,7 @@ public sealed class NotesController : BaseApiController
             return FromResult(Result<NoteResponse>.Failure(AppErrors.Conflict(VersionConflictMessage)));
         }
 
-        if (request.ContentJson is null && string.IsNullOrWhiteSpace(request.Title) && !HasStoredContent(note))
+        if (request.ContentJson is null && string.IsNullOrWhiteSpace(request.Title) && !NoteContentWriter.HasStoredContent(note))
         {
             return FromResult(Result<NoteResponse>.Failure(AppErrors.Validation(new Dictionary<string, string[]>
             {
@@ -174,18 +229,29 @@ public sealed class NotesController : BaseApiController
             })));
         }
 
+        // Fields installed app builds don't send are null and keep their stored values.
+        if (request.Tags is not null)
+        {
+            note.ExplicitTags = NoteContentWriter.NormalizeTags(request.Tags);
+        }
+
         var now = clock.UtcNow;
         if (request.ContentJson is not null)
         {
-            var error = ReplaceContent(db, note, request.ContentJson, request.PlainTextPreview, now);
+            var content = NoteContentWriter.Prepare(request.ContentJson, request.PlainTextPreview);
+            var error = NoteContentWriter.Replace(db, note, request.ContentJson, content, now)
+                ?? await NoteContentWriter.CheckAssetsAsync(db, userId, content.Facts, cancellationToken);
             if (error is not null)
             {
                 return FromResult(Result<NoteResponse>.Failure(error));
             }
         }
+        else if (request.Tags is not null)
+        {
+            NoteContentWriter.RefreshTags(note);
+        }
 
         note.Title = NormalizeTitle(request.Title);
-
         note.FontFamily = NormalizeFontFamily(request.FontFamily);
         note.FontSize = request.FontSize;
         note.FontWeight = request.FontWeight;
@@ -193,12 +259,14 @@ public sealed class NotesController : BaseApiController
         note.BackgroundColor = NormalizeBackgroundColor(request.BackgroundColor);
         note.IsPinned = request.IsPinned;
         note.IsArchived = request.IsArchived;
-        note.VersionToken = NewVersionToken();
+        note.IsLocked = request.IsLocked ?? note.IsLocked;
+        note.PaperStyle = request.PaperStyle ?? note.PaperStyle;
+        note.VersionToken = NoteContentWriter.NewVersionToken();
         note.LastEditedAtUtc = now;
         note.UpdatedAtUtc = now;
 
         return await TrySaveAsync(db, cancellationToken)
-            ? FromResult(Result<NoteResponse>.Success(Map(note)))
+            ? FromResult(Result<NoteResponse>.Success(NoteMappings.ToResponse(note)))
             : FromResult(Result<NoteResponse>.Failure(AppErrors.Conflict(VersionConflictMessage)));
     }
 
@@ -207,6 +275,7 @@ public sealed class NotesController : BaseApiController
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status413PayloadTooLarge)]
     public async Task<IActionResult> PatchContent(
         Guid id,
         [FromBody] UpdateNoteContentRequest request,
@@ -234,18 +303,20 @@ public sealed class NotesController : BaseApiController
         }
 
         var now = clock.UtcNow;
-        var error = ReplaceContent(db, note, request.ContentJson, request.PlainTextPreview, now);
+        var content = NoteContentWriter.Prepare(request.ContentJson, request.PlainTextPreview);
+        var error = NoteContentWriter.Replace(db, note, request.ContentJson, content, now)
+            ?? await NoteContentWriter.CheckAssetsAsync(db, userId, content.Facts, cancellationToken);
         if (error is not null)
         {
             return FromResult(Result<NoteResponse>.Failure(error));
         }
 
-        note.VersionToken = NewVersionToken();
+        note.VersionToken = NoteContentWriter.NewVersionToken();
         note.LastEditedAtUtc = now;
         note.UpdatedAtUtc = now;
 
         return await TrySaveAsync(db, cancellationToken)
-            ? FromResult(Result<NoteResponse>.Success(Map(note)))
+            ? FromResult(Result<NoteResponse>.Success(NoteMappings.ToResponse(note)))
             : FromResult(Result<NoteResponse>.Failure(AppErrors.Conflict(VersionConflictMessage)));
     }
 
@@ -267,30 +338,16 @@ public sealed class NotesController : BaseApiController
         }
 
         var now = clock.UtcNow;
-        var copy = new Note
-        {
-            UserId = source.UserId,
-            Title = BuildCopyTitle(source.Title),
-            ContentJson = source.ContentJson,
-            PlainTextPreview = source.PlainTextPreview,
-            FontFamily = source.FontFamily,
-            FontSize = source.FontSize,
-            FontWeight = source.FontWeight,
-            TextColor = source.TextColor,
-            BackgroundColor = source.BackgroundColor,
-            IsPinned = false,
-            IsArchived = false,
-            VersionToken = NewVersionToken(),
-            LastEditedAtUtc = now,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now
-        };
+        var copy = NoteMappings.CopyOf(source, BuildCopyTitle(source.Title), now);
+        copy.IsPinned = false;
+        copy.IsArchived = false;
 
         db.Notes.Add(copy);
         await db.SaveChangesAsync(cancellationToken);
-        return FromCreatedResult($"/api/notes/{copy.Id}", Result<NoteResponse>.Success(Map(copy)));
+        return FromCreatedResult($"/api/notes/{copy.Id}", Result<NoteResponse>.Success(NoteMappings.ToResponse(copy)));
     }
 
+    /// <summary>Moves the note to Recently Deleted; it is deleted forever after 30 days.</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
@@ -308,7 +365,7 @@ public sealed class NotesController : BaseApiController
         }
 
         // Rotating the token makes a save already in flight fail with 409 instead of editing the deleted note.
-        note.VersionToken = NewVersionToken();
+        note.VersionToken = NoteContentWriter.NewVersionToken();
         db.Notes.Remove(note);
         return await TrySaveAsync(db, cancellationToken)
             ? NoContent()
@@ -329,110 +386,10 @@ public sealed class NotesController : BaseApiController
         }
     }
 
-    private static bool HasStoredContent(Note note)
-    {
-        var stored = DeserializeContent(note.ContentJson);
-        return !string.IsNullOrWhiteSpace(note.PlainTextPreview) || (stored.Blocks?.Count ?? 0) > 0 || (stored.Content?.Count ?? 0) > 0;
-    }
-
-    private sealed record PreparedContent(string Json, string Preview, AppError? Error = null);
-
-    /// <summary>Serializes the document and picks its preview: derived by the server for version 2, the client's for version 1.</summary>
-    private static PreparedContent PrepareContent(RichNoteDocument document, string? clientPreview)
-    {
-        var json = SerializeContent(document);
-        if (document.Version != RichNoteV2Schema.Version)
-        {
-            return new PreparedContent(json, NormalizePlainTextPreview(clientPreview));
-        }
-
-        if (Encoding.UTF8.GetByteCount(json) > RichNoteV2Schema.MaxContentBytes)
-        {
-            return new PreparedContent(json, string.Empty, AppErrors.PayloadTooLarge(ContentTooLargeMessage));
-        }
-
-        return new PreparedContent(json, NormalizePlainTextPreview(RichNoteV2Schema.BuildPlainText(document.Content!)));
-    }
-
-    /// <summary>
-    /// Writes new content over a loaded note. An older document version never replaces a newer one (an old app build
-    /// can't read v2 and would save it blank), and the first v2 write keeps the v1 content in a backup row, in the same save.
-    /// </summary>
-    private static AppError? ReplaceContent(AppDbContext db, Note note, RichNoteDocument document, string? clientPreview, DateTime now)
-    {
-        var storedVersion = StoredVersion(note.ContentJson);
-        if (document.Version < storedVersion)
-        {
-            return AppErrors.NoteFormatTooNew();
-        }
-
-        var content = PrepareContent(document, clientPreview);
-        if (content.Error is not null)
-        {
-            return content.Error;
-        }
-
-        if (storedVersion < RichNoteV2Schema.Version && document.Version == RichNoteV2Schema.Version)
-        {
-            db.NoteContentBackups.Add(new NoteContentBackup
-            {
-                NoteId = note.Id,
-                UserId = note.UserId,
-                Version = storedVersion,
-                ContentJson = note.ContentJson,
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now
-            });
-        }
-
-        note.ContentJson = content.Json;
-        note.PlainTextPreview = content.Preview;
-        return null;
-    }
-
-    private static int StoredVersion(string json)
-    {
-        using var stored = JsonDocument.Parse(json);
-        foreach (var property in stored.RootElement.EnumerateObject())
-        {
-            if (string.Equals(property.Name, "version", StringComparison.OrdinalIgnoreCase) && property.Value.TryGetInt32(out var version))
-            {
-                return version;
-            }
-        }
-
-        return 1;
-    }
-
-    private static NoteResponse Map(Note note) =>
-        new(
-            note.Id,
-            note.Title,
-            DeserializeContent(note.ContentJson),
-            note.PlainTextPreview,
-            note.FontFamily,
-            note.FontSize,
-            note.FontWeight,
-            note.TextColor,
-            note.BackgroundColor,
-            note.IsPinned,
-            note.IsArchived,
-            note.VersionToken,
-            note.LastEditedAtUtc,
-            note.CreatedAtUtc,
-            note.UpdatedAtUtc);
-
     private static string NormalizeTitle(string? value) => value?.Trim() ?? string.Empty;
-
-    // The preview is derived from the content, so a long note is saved with a shortened preview rather than rejected.
-    private static string NormalizePlainTextPreview(string? value) => CutToLength(value?.Trim() ?? string.Empty, MaxPlainTextPreviewLength);
-
     private static string NormalizeFontFamily(string? value) => string.IsNullOrWhiteSpace(value) ? "system-ui" : value.Trim();
     private static string NormalizeTextColor(string? value) => string.IsNullOrWhiteSpace(value) ? "#111827" : value.Trim();
     private static string NormalizeBackgroundColor(string? value) => string.IsNullOrWhiteSpace(value) ? "#FFFFFF" : value.Trim();
-    private static string SerializeContent(RichNoteDocument document) => JsonSerializer.Serialize(document);
-    private static RichNoteDocument DeserializeContent(string json) => JsonSerializer.Deserialize<RichNoteDocument>(json, ContentReadOptions) ?? new RichNoteDocument(1, []);
-
 
     private static string BuildCopyTitle(string title)
     {
@@ -441,19 +398,6 @@ public sealed class NotesController : BaseApiController
             return "Copy";
         }
 
-        return CutToLength(title, MaxTitleLength - CopySuffix.Length) + CopySuffix;
+        return NoteContentWriter.CutToLength(title, NoteContentWriter.MaxTitleLength - CopySuffix.Length) + CopySuffix;
     }
-
-    private static string CutToLength(string value, int maxLength)
-    {
-        if (value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        // Never cut through an emoji: half a surrogate pair is not valid UTF-8.
-        return value[..(char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength)];
-    }
-
-    private static string NewVersionToken() => Guid.NewGuid().ToString("N");
 }
