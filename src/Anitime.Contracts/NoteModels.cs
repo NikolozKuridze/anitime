@@ -54,6 +54,23 @@ public sealed record UpdateNoteContentRequest(
     string? PlainTextPreview,
     string VersionToken);
 
+/// <summary>A list row without <c>contentJson</c>, returned by <c>GET /api/notes?view=summary</c>; fetch the full note to edit it.</summary>
+public sealed record NoteSummaryResponse(
+    Guid Id,
+    string Title,
+    string PlainTextPreview,
+    string FontFamily,
+    int FontSize,
+    int FontWeight,
+    string TextColor,
+    string BackgroundColor,
+    bool IsPinned,
+    bool IsArchived,
+    string VersionToken,
+    DateTime? LastEditedAtUtc,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
 public sealed record NoteResponse(
     Guid Id,
     string Title,

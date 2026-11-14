@@ -32,7 +32,8 @@ public static class DependencyInjection
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
         services.Configure<ExerciseLibraryOptions>(configuration.GetSection(ExerciseLibraryOptions.SectionName));
 
-        services.AddDbContext<AppDbContext>(options =>
+        // Pooled: contexts are reset and reused instead of built per request (AppDbContext keeps no per-request state).
+        services.AddDbContextPool<AppDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("Default")));
         services.AddStackExchangeRedisCache(options =>
         {

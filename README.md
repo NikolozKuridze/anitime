@@ -31,16 +31,15 @@ Lean modular monolith for habits, daily tracking, tasks, dashboard analytics, re
 ## Run with Docker
 
 ```bash
-cp .env.example .env   # then fill in the secrets
-docker compose up --build
+cp .env.example .env   # then fill in the secrets (JWT_SIGNING_KEY: 32+ characters)
+docker compose up -d --build
+scripts/seed-local.sh  # demo login: demo@anitime.local / Demo-Password-123 (localhost only)
 ```
 
-API:
-
-- Swagger UI: `http://localhost:8080/swagger`
-- RabbitMQ UI: `http://localhost:15672`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
+- API: `http://localhost:1717` (Swagger UI: `http://localhost:1717/swagger`)
+- RabbitMQ UI: `http://localhost:15673` (bound to 127.0.0.1)
+- MinIO API: `http://localhost:19100`
+- Stop: `docker compose down` (add `-v` to also delete the local data)
 
 ## Run locally
 
@@ -58,4 +57,4 @@ dotnet run --project src/Anitime.Worker
 - The notification sender is currently a logging placeholder. Replace `LoggingPushNotificationSender` with Firebase/APNS integration for production.
 - For a higher delivery guarantee later, add an outbox table around reminder event publishing.
 - The sample uses `EnsureCreated()` for frictionless startup. If you want formal migrations, switch startup to `Migrate()` and add an initial migration with `dotnet ef`.
-- Because the sample uses `EnsureCreated()`, schema changes require recreating the PostgreSQL volume during development: `docker compose down -v`.
+- EF Core migrations run automatically when the API starts.

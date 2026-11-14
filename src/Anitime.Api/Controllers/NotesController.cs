@@ -1,3 +1,4 @@
+using Anitime.Api.Infrastructure;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Common;
 using Anitime.Application.Validation;
@@ -22,12 +23,15 @@ public sealed class NotesController : BaseApiController
     private const string VersionConflictMessage = "Note was changed by another request. Refresh and retry.";
 
     // Notes migrated from the pre-rich-text schema were stored with camelCase keys; new ones use PascalCase.
+    private const string SummaryView = "summary";
     private static readonly JsonSerializerOptions ContentReadOptions = new() { PropertyNameCaseInsensitive = true };
 
     [HttpGet]
+    [ConditionalGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<NoteResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] bool includeArchived,
+        [FromQuery] string? view,
         [FromServices] AppDbContext db,
         [FromServices] IUserContext userContext,
         CancellationToken cancellationToken)
@@ -40,11 +44,20 @@ public sealed class NotesController : BaseApiController
             query = query.Where(x => !x.IsArchived);
         }
 
-        var items = await query
-            .OrderByDescending(x => x.IsPinned)
-            .ThenByDescending(x => x.UpdatedAtUtc)
-            .ToListAsync(cancellationToken);
+        query = query.OrderByDescending(x => x.IsPinned).ThenByDescending(x => x.UpdatedAtUtc);
 
+        if (string.Equals(view, SummaryView, StringComparison.OrdinalIgnoreCase))
+        {
+            // Opt-in: skips reading and re-serializing every note's full content.
+            var summaries = await query
+                .Select(x => new NoteSummaryResponse(
+                    x.Id, x.Title, x.PlainTextPreview, x.FontFamily, x.FontSize, x.FontWeight, x.TextColor, x.BackgroundColor,
+                    x.IsPinned, x.IsArchived, x.VersionToken, x.LastEditedAtUtc, x.CreatedAtUtc, x.UpdatedAtUtc))
+                .ToListAsync(cancellationToken);
+            return Ok(summaries);
+        }
+
+        var items = await query.ToListAsync(cancellationToken);
         return Ok(items.Select(Map).ToList());
     }
 

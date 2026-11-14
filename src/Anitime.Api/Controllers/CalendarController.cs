@@ -51,16 +51,16 @@ public sealed class CalendarController : BaseApiController
         var tasks = await db.Tasks
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end)
-            .ToListAsync(cancellationToken);
+            .GroupBy(x => x.Date)
+            .Select(x => new { Date = x.Key, Due = x.Count(), Completed = x.Count(t => t.IsCompleted) })
+            .ToDictionaryAsync(x => x.Date, cancellationToken);
+        var habitsByDay = habits.ToDictionary(x => x.Date, x => x.Count);
 
-        var days = new List<CalendarDayResponse>();
+        var days = new List<CalendarDayResponse>(end.Day);
         for (var day = start; day <= end; day = day.AddDays(1))
         {
-            days.Add(new CalendarDayResponse(
-                day,
-                habits.FirstOrDefault(x => x.Date == day)?.Count ?? 0,
-                tasks.Count(x => x.Date == day),
-                tasks.Count(x => x.Date == day && x.IsCompleted)));
+            var dayTasks = tasks.GetValueOrDefault(day);
+            days.Add(new CalendarDayResponse(day, habitsByDay.GetValueOrDefault(day), dayTasks?.Due ?? 0, dayTasks?.Completed ?? 0));
         }
 
         return Ok(new CalendarMonthResponse(year, month, days));

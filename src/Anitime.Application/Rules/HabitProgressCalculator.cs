@@ -4,13 +4,15 @@ namespace Anitime.Application.Rules;
 
 public static class HabitProgressCalculator
 {
-    public static (int Current, int Best) CalculateStreaks(Habit habit, DateOnly today)
+    public static (int Current, int Best) CalculateStreaks(Habit habit, DateOnly today) =>
+        CalculateStreaks(habit.StartDate, habit.DurationDays, habit.Entries.Where(x => x.IsCompleted).Select(x => x.Date), today);
+
+    /// <summary>Same as the entity overload, for callers that load only the completed dates.</summary>
+    public static (int Current, int Best) CalculateStreaks(DateOnly startDate, int durationDays, IEnumerable<DateOnly> completedDays, DateOnly today)
     {
-        var endDate = HabitRules.GetEndDate(habit);
-        var completedDates = habit.Entries
-            .Where(x => x.IsCompleted)
-            .Select(x => x.Date)
-            .Where(x => x >= habit.StartDate && x <= endDate && x <= today)
+        var endDate = startDate.AddDays(durationDays - 1);
+        var completedDates = completedDays
+            .Where(x => x >= startDate && x <= endDate && x <= today)
             .OrderBy(x => x.DayNumber)
             .Distinct()
             .ToList();

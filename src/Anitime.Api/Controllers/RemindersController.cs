@@ -1,3 +1,4 @@
+using Anitime.Api.Infrastructure;
 using Anitime.Api.Mapping;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Caching;
@@ -18,6 +19,7 @@ namespace Anitime.Api.Controllers;
 public sealed class RemindersController : BaseApiController
 {
     [HttpGet]
+    [ConditionalGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<ReminderResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromServices] AppDbContext db,

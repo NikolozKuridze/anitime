@@ -1,3 +1,4 @@
+using Anitime.Api.Infrastructure;
 using Anitime.Api.Mapping;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Caching;
@@ -19,19 +20,50 @@ namespace Anitime.Api.Controllers;
 public sealed class TasksController : BaseApiController
 {
     [HttpGet]
+    [ConditionalGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<TaskResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
         [FromServices] AppDbContext db,
         [FromServices] IUserContext userContext,
         CancellationToken cancellationToken)
     {
+        if (from > to)
+        {
+            return FromResult(Result<IReadOnlyCollection<TaskResponse>>.Failure(
+                AppErrors.InvalidRequest("`to` must be greater than or equal to `from`.")));
+        }
+
         var userId = userContext.GetRequiredUserId();
-        var items = await db.Tasks
-            .AsNoTracking()
-            .Include(x => x.ChecklistItems.OrderBy(i => i.CreatedAtUtc))
-            .Where(x => x.UserId == userId)
+        var query = db.Tasks.AsNoTracking().Where(x => x.UserId == userId);
+        if (from is not null)
+        {
+            query = query.Where(x => x.Date >= from);
+        }
+
+        if (to is not null)
+        {
+            query = query.Where(x => x.Date <= to);
+        }
+
+        // Projection: only the columns the response uses.
+        var items = await query
             .OrderBy(x => x.Date)
             .ThenByDescending(x => x.CreatedAtUtc)
+            .Select(x => new TaskItem
+            {
+                Id = x.Id,
+                Title = x.Title,
+                Description = x.Description,
+                Emoji = x.Emoji,
+                Date = x.Date,
+                IsCompleted = x.IsCompleted,
+                ChecklistItems = x.ChecklistItems
+                    .OrderBy(i => i.CreatedAtUtc)
+                    .Select(i => new ChecklistItem { Id = i.Id, Title = i.Title, IsDone = i.IsDone, CreatedAtUtc = i.CreatedAtUtc })
+                    .ToList()
+            })
             .ToListAsync(cancellationToken);
 
         return Ok(items.Select(x => x.ToResponse()).ToList());

@@ -21,6 +21,7 @@ namespace Anitime.Api.Controllers;
 public sealed class HabitsController : BaseApiController
 {
     [HttpGet]
+    [ConditionalGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<HabitResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromServices] AppDbContext db,
@@ -30,11 +31,23 @@ public sealed class HabitsController : BaseApiController
     {
         var userId = userContext.GetRequiredUserId();
         var today = ClientDateResolver.ResolveToday(Request, clock);
+        // Projection: only the columns the response uses (entries are the bulk of this payload).
         var items = await db.Habits
             .AsNoTracking()
-            .Include(x => x.Entries.OrderBy(e => e.Date))
             .Where(x => x.UserId == userId)
             .OrderByDescending(x => x.CreatedAtUtc)
+            .Select(x => new Habit
+            {
+                Id = x.Id,
+                Title = x.Title,
+                Emoji = x.Emoji,
+                StartDate = x.StartDate,
+                DurationDays = x.DurationDays,
+                Entries = x.Entries
+                    .OrderBy(e => e.Date)
+                    .Select(e => new HabitEntry { Id = e.Id, Date = e.Date, IsCompleted = e.IsCompleted })
+                    .ToList()
+            })
             .ToListAsync(cancellationToken);
 
         return Ok(items.Select(x => x.ToResponse(today)).ToList());
@@ -100,8 +113,10 @@ public sealed class HabitsController : BaseApiController
 
         var userId = userContext.GetRequiredUserId();
         var today = ClientDateResolver.ResolveToday(Request, clock);
+        var targetDate = request.Date ?? today;
+        // Only the target day's entry is needed, not the habit's whole history.
         var habit = await db.Habits
-            .Include(x => x.Entries)
+            .Include(x => x.Entries.Where(e => e.Date == targetDate))
             .FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
 
         if (habit is null)
@@ -109,7 +124,6 @@ public sealed class HabitsController : BaseApiController
             return FromResult(Result<HabitEntryResponse>.Failure(AppErrors.NotFound("Habit was not found.")));
         }
 
-        var targetDate = request.Date ?? today;
         var ruleError = HabitRules.ValidateCompletionDate(habit, targetDate, today);
         if (ruleError is not null)
         {

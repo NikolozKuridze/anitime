@@ -44,39 +44,45 @@ public sealed class AnalyticsController : BaseApiController
                 AppErrors.InvalidRequest($"The date range cannot exceed {MaxRangeDays} days.")));
         }
 
-        var habits = await db.Habits
-            .AsNoTracking()
-            .Include(x => x.Entries)
-            .Where(x => x.UserId == userId)
-            .ToListAsync(cancellationToken);
-
+        var habits = await HabitHistoryQuery.LoadAsync(db, userId, end, cancellationToken);
         var tasks = await db.Tasks
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end)
+            .Select(x => new { x.Date, x.IsCompleted, x.CompletedAtUtc })
             .ToListAsync(cancellationToken);
 
-        var daily = new List<DailyStatResponse>();
+        var habitCompletionsByDay = habits
+            .SelectMany(h => h.CompletedDays)
+            .Where(d => d >= start)
+            .GroupBy(d => d)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var tasksCompletedByDay = tasks
+            .Where(t => t.IsCompleted && t.CompletedAtUtc.HasValue)
+            .GroupBy(t => DateOnly.FromDateTime(t.CompletedAtUtc!.Value))
+            .ToDictionary(g => g.Key, g => g.Count());
+        var tasksPlannedByDay = tasks.GroupBy(t => t.Date).ToDictionary(g => g.Key, g => g.Count());
+
+        var daily = new List<DailyStatResponse>(end.DayNumber - start.DayNumber + 1);
         for (var dayNumber = start.DayNumber; dayNumber <= end.DayNumber; dayNumber++)
         {
             var day = DateOnly.FromDayNumber(dayNumber);
             daily.Add(new DailyStatResponse(
                 day,
-                habits.Sum(h => h.Entries.Count(e => e.Date == day && e.IsCompleted)),
-                tasks.Count(t => t.IsCompleted && t.CompletedAtUtc.HasValue && DateOnly.FromDateTime(t.CompletedAtUtc.Value) == day),
-                tasks.Count(t => t.Date == day)));
+                habitCompletionsByDay.GetValueOrDefault(day),
+                tasksCompletedByDay.GetValueOrDefault(day),
+                tasksPlannedByDay.GetValueOrDefault(day)));
         }
 
         var expectedHabitCompletions = habits.Sum(h =>
         {
-            var habitEnd = h.StartDate.AddDays(h.DurationDays - 1);
             var effectiveStart = h.StartDate > start ? h.StartDate : start;
-            var effectiveEnd = habitEnd < end ? habitEnd : end;
+            var effectiveEnd = h.EndDate < end ? h.EndDate : end;
             return effectiveEnd < effectiveStart ? 0 : effectiveEnd.DayNumber - effectiveStart.DayNumber + 1;
         });
 
-        var actualHabitCompletions = habits.Sum(h => h.Entries.Count(e => e.Date >= start && e.Date <= end && e.IsCompleted));
+        var actualHabitCompletions = habitCompletionsByDay.Values.Sum();
         var completedTasks = tasks.Count(t => t.IsCompleted);
-        var streaks = habits.Select(x => HabitProgressCalculator.CalculateStreaks(x, end)).ToList();
+        var streaks = habits.Select(x => HabitProgressCalculator.CalculateStreaks(x.StartDate, x.DurationDays, x.CompletedDays, end)).ToList();
 
         return Ok(new AnalyticsResponse(
             start,

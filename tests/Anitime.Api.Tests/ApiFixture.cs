@@ -8,6 +8,7 @@ using Anitime.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,11 +43,12 @@ public sealed class ApiFixture : IAsyncLifetime
                 services.RemoveAll<IFileStorageService>();
                 services.AddSingleton<IFileStorageService, InMemoryFileStorage>();
                 services.AddSingleton<ILoggerProvider>(new CollectingLoggerProvider(Logs));
+                services.ConfigureDbContext<AppDbContext>(options => options.AddInterceptors(new QueryCounter()));
                 services.RemoveAll<IEmailSender>();
                 services.AddSingleton<IEmailSender>(Emails);
             });
         });
-        _ = _factory.Server;
+        _factory.Server.PreserveExecutionContext = true; // lets QueryCounter scopes follow requests into the server
     }
 
     public async Task DisposeAsync()

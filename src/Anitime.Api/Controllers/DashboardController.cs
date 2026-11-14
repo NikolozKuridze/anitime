@@ -16,6 +16,8 @@ namespace Anitime.Api.Controllers;
 [Route("api/dashboard")]
 public sealed class DashboardController : BaseApiController
 {
+    private const char DayTagSeparator = '|';
+
     [HttpGet]
     [ProducesResponseType(typeof(DashboardResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(
@@ -28,37 +30,46 @@ public sealed class DashboardController : BaseApiController
         var userId = userContext.GetRequiredUserId();
         var today = ClientDateResolver.ResolveToday(Request, clock);
         var cacheKey = CacheKeys.Dashboard(userId);
+        // The figures depend on the client's "today", so the entry records which day it was computed for.
+        var dayTag = today.ToString("yyyy-MM-dd") + DayTagSeparator;
         var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(cached))
+        if (cached is not null && cached.StartsWith(dayTag, StringComparison.Ordinal))
         {
-            return Content(cached, "application/json");
+            return Content(cached[dayTag.Length..], "application/json");
         }
 
-        var habits = await db.Habits
-            .AsNoTracking()
-            .Include(x => x.Entries)
-            .Where(x => x.UserId == userId)
-            .ToListAsync(cancellationToken);
-
+        var habits = await HabitHistoryQuery.LoadAsync(db, userId, today, cancellationToken);
+        var todayStartUtc = today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var tomorrowStartUtc = todayStartUtc.AddDays(1);
+        // One aggregate row instead of every task the user ever made.
         var tasks = await db.Tasks
             .AsNoTracking()
             .Where(x => x.UserId == userId)
-            .ToListAsync(cancellationToken);
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                CompletedToday = g.Count(x => x.CompletedAtUtc >= todayStartUtc && x.CompletedAtUtc < tomorrowStartUtc),
+                Pending = g.Count(x => !x.IsCompleted)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var streaks = habits.Select(x => HabitProgressCalculator.CalculateStreaks(x, today)).ToList();
+        var streaks = habits
+            .Select(x => HabitProgressCalculator.CalculateStreaks(x.StartDate, x.DurationDays, x.CompletedDays, today))
+            .ToList();
         var response = new DashboardResponse(
             habits.Count,
-            habits.Count(x => x.StartDate.AddDays(x.DurationDays - 1) >= today),
-            habits.Count(x => x.Entries.Any(e => e.Date == today && e.IsCompleted)),
-            tasks.Count,
-            tasks.Count(x => x.CompletedAtUtc.HasValue && DateOnly.FromDateTime(x.CompletedAtUtc.Value) == today),
-            tasks.Count(x => !x.IsCompleted),
+            habits.Count(x => x.EndDate >= today),
+            habits.Count(x => x.CompletedDays.Contains(today)),
+            tasks?.Total ?? 0,
+            tasks?.CompletedToday ?? 0,
+            tasks?.Pending ?? 0,
             streaks.DefaultIfEmpty((0, 0)).Max(x => x.Item2),
             streaks.Sum(x => x.Current));
 
         await cache.SetStringAsync(
             cacheKey,
-            JsonSerializer.Serialize(response, CacheJson.Options),
+            dayTag + JsonSerializer.Serialize(response, CacheJson.Options),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) },
             cancellationToken);
 

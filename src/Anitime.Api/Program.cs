@@ -7,7 +7,9 @@ using Anitime.Infrastructure;
 using Anitime.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
+using System.IO.Compression;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -51,6 +53,14 @@ builder.Services.AddControllers(options =>
         options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
     });
 builder.Services.AddAuthRateLimiting();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     // Only the scheme is taken from the proxy, so it can't be used to spoof a client IP or host.
@@ -147,6 +157,11 @@ app.Use((context, next) =>
         null,
         context.TraceIdentifier));
 });
+// Auth responses carry tokens, so they stay uncompressed (BREACH); everything else is compressed when the client accepts it.
+app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/api/auth"),
+    branch => branch.UseResponseCompression());
+app.UseMiddleware<ConditionalGetMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors("ClientOrigins");
