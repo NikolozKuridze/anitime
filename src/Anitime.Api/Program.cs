@@ -1,4 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Anitime.Application.Validation;
 using Anitime.Api.Infrastructure;
 using Anitime.Api.Swagger;
@@ -44,10 +47,22 @@ builder.Services.AddControllers(options =>
         options.MaxValidationDepth = MaxRequestValidationDepth;
         // Also bounds the ModelState key recorded for a JSON error, so over-deep bodies return 400 instead of throwing.
         options.MaxModelBindingRecursionDepth = MaxRequestValidationDepth;
+        // v2 note attributes are free-form JSON values, checked by RichNoteV2Schema; MVC has nothing to validate inside them.
+        options.ModelMetadataDetailsProviders.Add(new SuppressChildValidationMetadataProvider(typeof(JsonElement)));
     })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.MaxDepth = MaxRequestJsonDepth;
+        // Note bodies reject unknown members (a silently dropped field is how checkbox ticks were lost).
+        // Scoped to request binding: stored notes are read with their own lenient options.
+        options.JsonSerializerOptions.TypeInfoResolver = (options.JsonSerializerOptions.TypeInfoResolver ?? new DefaultJsonTypeInfoResolver())
+            .WithAddedModifier(typeInfo =>
+            {
+                if (NoteContractTypes.Strict.Contains(typeInfo.Type))
+                {
+                    typeInfo.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
+                }
+            });
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         options.JsonSerializerOptions.Converters.Add(new NulStrippingStringConverter());
         options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());

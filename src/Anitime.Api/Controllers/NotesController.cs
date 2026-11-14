@@ -9,11 +9,14 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 using System.Text.Json;
+using Anitime.Application.Rules;
 
 namespace Anitime.Api.Controllers;
 
 [Authorize]
+[InvalidRequestBody]
 [Route("api/notes")]
 public sealed class NotesController : BaseApiController
 {
@@ -21,6 +24,7 @@ public sealed class NotesController : BaseApiController
     private const int MaxPlainTextPreviewLength = 50_000;
     private const string CopySuffix = " (Copy)";
     private const string VersionConflictMessage = "Note was changed by another request. Refresh and retry.";
+    private const string ContentTooLargeMessage = "Note content is too large. Maximum size is 2 MB.";
 
     // Notes migrated from the pre-rich-text schema were stored with camelCase keys; new ones use PascalCase.
     private const string SummaryView = "summary";
@@ -100,13 +104,19 @@ public sealed class NotesController : BaseApiController
             return validationResponse;
         }
 
+        var content = PrepareContent(request.ContentJson, request.PlainTextPreview);
+        if (content.Error is not null)
+        {
+            return FromResult(Result<NoteResponse>.Failure(content.Error));
+        }
+
         var now = clock.UtcNow;
         var note = new Note
         {
             UserId = userContext.GetRequiredUserId(),
             Title = NormalizeTitle(request.Title),
-            ContentJson = SerializeContent(request.ContentJson),
-            PlainTextPreview = NormalizePlainTextPreview(request.PlainTextPreview),
+            ContentJson = content.Json,
+            PlainTextPreview = content.Preview,
             FontFamily = NormalizeFontFamily(request.FontFamily),
             FontSize = request.FontSize,
             FontWeight = request.FontWeight,
@@ -165,12 +175,16 @@ public sealed class NotesController : BaseApiController
         }
 
         var now = clock.UtcNow;
-        note.Title = NormalizeTitle(request.Title);
         if (request.ContentJson is not null)
         {
-            note.ContentJson = SerializeContent(request.ContentJson);
-            note.PlainTextPreview = NormalizePlainTextPreview(request.PlainTextPreview);
+            var error = ReplaceContent(db, note, request.ContentJson, request.PlainTextPreview, now);
+            if (error is not null)
+            {
+                return FromResult(Result<NoteResponse>.Failure(error));
+            }
         }
+
+        note.Title = NormalizeTitle(request.Title);
 
         note.FontFamily = NormalizeFontFamily(request.FontFamily);
         note.FontSize = request.FontSize;
@@ -220,8 +234,12 @@ public sealed class NotesController : BaseApiController
         }
 
         var now = clock.UtcNow;
-        note.ContentJson = SerializeContent(request.ContentJson);
-        note.PlainTextPreview = NormalizePlainTextPreview(request.PlainTextPreview);
+        var error = ReplaceContent(db, note, request.ContentJson, request.PlainTextPreview, now);
+        if (error is not null)
+        {
+            return FromResult(Result<NoteResponse>.Failure(error));
+        }
+
         note.VersionToken = NewVersionToken();
         note.LastEditedAtUtc = now;
         note.UpdatedAtUtc = now;
@@ -311,9 +329,80 @@ public sealed class NotesController : BaseApiController
         }
     }
 
-    private static bool HasStoredContent(Note note) =>
-        !string.IsNullOrWhiteSpace(note.PlainTextPreview) ||
-        (DeserializeContent(note.ContentJson).Blocks?.Count ?? 0) > 0;
+    private static bool HasStoredContent(Note note)
+    {
+        var stored = DeserializeContent(note.ContentJson);
+        return !string.IsNullOrWhiteSpace(note.PlainTextPreview) || (stored.Blocks?.Count ?? 0) > 0 || (stored.Content?.Count ?? 0) > 0;
+    }
+
+    private sealed record PreparedContent(string Json, string Preview, AppError? Error = null);
+
+    /// <summary>Serializes the document and picks its preview: derived by the server for version 2, the client's for version 1.</summary>
+    private static PreparedContent PrepareContent(RichNoteDocument document, string? clientPreview)
+    {
+        var json = SerializeContent(document);
+        if (document.Version != RichNoteV2Schema.Version)
+        {
+            return new PreparedContent(json, NormalizePlainTextPreview(clientPreview));
+        }
+
+        if (Encoding.UTF8.GetByteCount(json) > RichNoteV2Schema.MaxContentBytes)
+        {
+            return new PreparedContent(json, string.Empty, AppErrors.PayloadTooLarge(ContentTooLargeMessage));
+        }
+
+        return new PreparedContent(json, NormalizePlainTextPreview(RichNoteV2Schema.BuildPlainText(document.Content!)));
+    }
+
+    /// <summary>
+    /// Writes new content over a loaded note. An older document version never replaces a newer one (an old app build
+    /// can't read v2 and would save it blank), and the first v2 write keeps the v1 content in a backup row, in the same save.
+    /// </summary>
+    private static AppError? ReplaceContent(AppDbContext db, Note note, RichNoteDocument document, string? clientPreview, DateTime now)
+    {
+        var storedVersion = StoredVersion(note.ContentJson);
+        if (document.Version < storedVersion)
+        {
+            return AppErrors.NoteFormatTooNew();
+        }
+
+        var content = PrepareContent(document, clientPreview);
+        if (content.Error is not null)
+        {
+            return content.Error;
+        }
+
+        if (storedVersion < RichNoteV2Schema.Version && document.Version == RichNoteV2Schema.Version)
+        {
+            db.NoteContentBackups.Add(new NoteContentBackup
+            {
+                NoteId = note.Id,
+                UserId = note.UserId,
+                Version = storedVersion,
+                ContentJson = note.ContentJson,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+        }
+
+        note.ContentJson = content.Json;
+        note.PlainTextPreview = content.Preview;
+        return null;
+    }
+
+    private static int StoredVersion(string json)
+    {
+        using var stored = JsonDocument.Parse(json);
+        foreach (var property in stored.RootElement.EnumerateObject())
+        {
+            if (string.Equals(property.Name, "version", StringComparison.OrdinalIgnoreCase) && property.Value.TryGetInt32(out var version))
+            {
+                return version;
+            }
+        }
+
+        return 1;
+    }
 
     private static NoteResponse Map(Note note) =>
         new(

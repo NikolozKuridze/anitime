@@ -112,12 +112,21 @@ public sealed class NoteValidatorTests
     }
 
     [Fact]
-    public void UpdateNote_WrongDocumentVersion_IsInvalid()
+    public void UpdateNote_UnsupportedDocumentVersion_IsInvalid()
     {
         var result = _updateValidator.TestValidate(new UpdateNoteRequest(
-            "Title", new RichNoteDocument(2, []), null, "system-ui", 16, 400, null, null, false, false, "token"));
+            "Title", new RichNoteDocument(3, [], []), null, "system-ui", 16, 400, null, null, false, false, "token"));
 
         result.ShouldHaveValidationErrorFor("ContentJson.Version");
+    }
+
+    [Fact]
+    public void Version2_WithV1Blocks_IsInvalid()
+    {
+        var result = _contentValidator.TestValidate(new UpdateNoteContentRequest(new RichNoteDocument(2, []), null, "token"));
+
+        result.ShouldHaveValidationErrorFor("ContentJson.Blocks");
+        result.ShouldHaveValidationErrorFor("ContentJson.Content");
     }
 
     private static RichTextBlockNode Paragraph(string text) =>

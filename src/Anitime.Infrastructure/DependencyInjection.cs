@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<MinioOptions>(configuration.GetSection(MinioOptions.SectionName));
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
+        services.Configure<ClientAppOptions>(configuration.GetSection(ClientAppOptions.SectionName));
         services.Configure<ExerciseLibraryOptions>(configuration.GetSection(ExerciseLibraryOptions.SectionName));
 
         // Pooled: contexts are reset and reused instead of built per request (AppDbContext keeps no per-request state).

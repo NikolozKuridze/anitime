@@ -308,6 +308,48 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.ToTable("notes", (string)null);
                 });
 
+            modelBuilder.Entity("Anitime.Domain.Entities.NoteContentBackup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("NoteId");
+
+                    b.HasIndex("UserId", "NoteId");
+
+                    b.ToTable("note_content_backups", (string)null);
+                });
+
             modelBuilder.Entity("Anitime.Domain.Entities.PasswordResetToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -738,6 +780,15 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Anitime.Domain.Entities.NoteContentBackup", b =>
+                {
+                    b.HasOne("Anitime.Domain.Entities.Note", null)
+                        .WithMany()
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Anitime.Domain.Entities.PasswordResetToken", b =>

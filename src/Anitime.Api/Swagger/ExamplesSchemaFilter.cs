@@ -120,11 +120,19 @@ public sealed class ExamplesSchemaFilter : ISchemaFilter
         }
         else if (context.Type == typeof(UpdateNoteContentRequest))
         {
+            // Version 2: the server derives plainTextPreview from the content, so it is omitted.
             schema.Example = new OpenApiObject
             {
-                ["contentJson"] = BuildRichNoteDocumentExample(),
-                ["plainTextPreview"] = new OpenApiString("Goals Launch notes module Review metrics"),
+                ["contentJson"] = OpenApiAnyFactory.CreateFromJson(RichNoteDocumentV2Example),
                 ["versionToken"] = new OpenApiString("6eb1b66ac9e84c28b560d96885c77e84")
+            };
+        }
+        else if (context.Type == typeof(AppConfigResponse))
+        {
+            schema.Example = new OpenApiObject
+            {
+                ["minIosBuild"] = new OpenApiInteger(0),
+                ["minAppVersion"] = new OpenApiString("0.0.0")
             };
         }
         else if (context.Type == typeof(AuthResponse))
@@ -320,6 +328,17 @@ public sealed class ExamplesSchemaFilter : ISchemaFilter
             };
         }
     }
+
+    private const string RichNoteDocumentV2Example = """
+        {"version":2,"content":[
+          {"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Goals"}]},
+          {"type":"paragraph","content":[{"type":"text","text":"Launch ","marks":[{"type":"bold"}]},{"type":"text","text":"notes","marks":[{"type":"highlight","attrs":{"color":"mint"}}]}]},
+          {"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"Review metrics"}]}]}]},
+          {"type":"table","content":[{"type":"tableRow","content":[
+            {"type":"tableHeader","content":[{"type":"paragraph","content":[{"type":"text","text":"Week"}]}]},
+            {"type":"tableHeader","content":[{"type":"paragraph","content":[{"type":"text","text":"Owner"}]}]}]}]}
+        ]}
+        """;
 
     private static OpenApiObject BuildRichNoteDocumentExample() =>
         new()

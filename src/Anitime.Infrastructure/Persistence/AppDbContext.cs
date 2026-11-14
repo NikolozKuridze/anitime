@@ -16,6 +16,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<HabitEntry> HabitEntries => Set<HabitEntry>();
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
     public DbSet<Note> Notes => Set<Note>();
+    public DbSet<NoteContentBackup> NoteContentBackups => Set<NoteContentBackup>();
     public DbSet<ChecklistItem> ChecklistItems => Set<ChecklistItem>();
     public DbSet<Reminder> Reminders => Set<Reminder>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();

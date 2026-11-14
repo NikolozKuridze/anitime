@@ -118,6 +118,16 @@ public sealed class ApiFixture : IAsyncLifetime
         _factory.WithWebHostBuilder(builder => builder.UseSetting("RateLimiting:AuthPermitLimit", permitLimit.ToString()))
             .CreateClient();
 
+    /// <summary>An anonymous client on a host with extra configuration values (keys use ':' separators).</summary>
+    public HttpClient ClientWithSettings(params (string Key, string Value)[] settings) =>
+        _factory.WithWebHostBuilder(builder =>
+        {
+            foreach (var (key, value) in settings)
+            {
+                builder.UseSetting(key, value);
+            }
+        }).CreateClient();
+
     public sealed class CapturingEmailSender : IEmailSender
     {
         private readonly ConcurrentQueue<EmailMessage> _sent = new();

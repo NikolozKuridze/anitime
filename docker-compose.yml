@@ -27,6 +27,8 @@ services:
       Email__Provider: "${EMAIL_PROVIDER:-}"
       Email__ResendApiKey: "${RESEND_API_KEY:-}"
       Email__From: "${EMAIL_FROM:-}"
+      ClientApp__MinIosBuild: "${MIN_IOS_BUILD:-0}"
+      ClientApp__MinAppVersion: "${MIN_APP_VERSION:-0.0.0}"
     depends_on:
       postgres:
         condition: service_healthy

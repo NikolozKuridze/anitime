@@ -13,7 +13,7 @@ A mobile-first backend (JWT, CORS for Capacitor/Ionic clients) covering:
 - **Profile** — name, gender, DOB, age; profile + background images (MinIO); background style settings (transparent/solid/gradient/image).
 - **Habits** — 30-day habit challenges with daily check toggling, current/best streaks, progress.
 - **Tasks** — task list with checklist items, completion tracking.
-- **Notes** — rich-text notes with formatting (align, format, plain-text preview).
+- **Notes** — rich-text notes. Document version 1 (`blocks`, legacy) and version 2 (ProseMirror-shaped `content`, allow-listed by `Application/Rules/RichNoteV2Schema.cs`). See §10 "Notes v2".
 - **Reminders** — scheduled reminders → RabbitMQ event → push notification pipeline.
 - **Calendar / Dashboard / Analytics** — month view, aggregate counts, streak analytics (Redis-cached).
 - **Exercise Library** *(new)* — public-domain catalog of 873 exercises with instructions, muscle groups, and demonstration images. See §7.
@@ -165,3 +165,10 @@ dotnet test                        # Application.Tests (rules + validators) and 
 **Logging:** `Microsoft.AspNetCore.Hosting.Diagnostics` at `Information` logs method, path, status and duration for each request, with no bodies or auth headers.
 
 > Tests are **not** run automatically. Add tests only when requested.
+
+**Notes v2 (branch `notes-v2`, plan: app repo `docs/NOTES-PARITY.md`):**
+- Note request bodies reject unknown JSON members with `400 invalid_request` (a resolver modifier in `Program.cs` over `NoteContractTypes.Strict`; `[InvalidRequestBody]` on `NotesController` shapes the error). Stored notes are still read leniently.
+- `contentJson.version` 1 needs `blocks` (unchanged rules); version 2 needs `content`. `RichNoteV2Schema` enforces node types, parent/child rules, attrs, marks, link schemes, colours and limits (5,000 top-level, 50,000 nodes, 20,000 chars per text, 8 list levels, 50x1,000 tables with equal row widths, 100 images, 2 MB serialized → `413`). Version 2 previews are built by the server.
+- A version 1 write over a stored version 2 note returns `409 note_format_too_new`. The first version 2 write over a version 1 note copies the old content into `note_content_backups` in the same save.
+- `GET /api/app/config` (anonymous) returns `{minIosBuild, minAppVersion}` from `ClientApp:*` (env `MIN_IOS_BUILD`, `MIN_APP_VERSION`; defaults 0 / 0.0.0).
+- Not yet: image `assetId` ownership (no attachments until P2), backup retention (plan says 90 days; nothing deletes them yet).
