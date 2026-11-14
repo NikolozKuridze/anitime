@@ -25,8 +25,6 @@ Lean modular monolith for habits, daily tracking, tasks, dashboard analytics, re
 - Calendar month view
 - Analytics and streak tracking
 - Reminder scheduling and queue-based push notification pipeline
-- Workout exercise library (873 public-domain exercises with instructions, muscles, and images) — `/api/exercises`
-- Curated workout collections (Leg Day, Push, Core, HIIT, etc.) with embeddable YouTube videos and related exercises — `/api/workouts`
 
 ## Run with Docker
 

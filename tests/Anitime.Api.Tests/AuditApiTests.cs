@@ -56,18 +56,6 @@ public sealed class AuditApiTests(ApiFixture fixture)
         Assert.Equal(Keys(miss), Keys(hit));
     }
 
-    [Fact]
-    public async Task ExerciseFilters_CacheHit_HasSameJsonShapeAsMiss()
-    {
-        var client = await fixture.NewUserClientAsync();
-
-        var first = await client.GetFromJsonAsync<JsonElement>("/api/exercises/filters");
-        var second = await client.GetFromJsonAsync<JsonElement>("/api/exercises/filters");
-
-        Assert.Equal(Keys(first), Keys(second));
-        Assert.True(second.TryGetProperty("muscles", out _));
-    }
-
     // ---- query and header bounds ----
 
     [Theory]
@@ -103,19 +91,9 @@ public sealed class AuditApiTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Exercises_HugePageNumber_ReturnsEmptyPage()
-    {
-        var client = await fixture.NewUserClientAsync();
-
-        var response = await client.GetAsync($"/api/exercises?page={int.MaxValue}&pageSize=100");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
     [Theory]
-    [InlineData("/api/exercises?search=a%00b")]
-    [InlineData("/api/exercises?muscle=%00")]
+    [InlineData("/api/notes?view=a%00b")]
+    [InlineData("/api/calendar?year=%00")]
     public async Task NulInUrl_Returns400(string url)
     {
         var client = await fixture.NewUserClientAsync();

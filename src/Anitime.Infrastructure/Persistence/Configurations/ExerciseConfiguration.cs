@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Anitime.Infrastructure.Persistence.Configurations;
 
+// Retired, kept for data only: keeps the EF model matching the existing table so no drop migration is generated.
 public sealed class ExerciseConfiguration : IEntityTypeConfiguration<Exercise>
 {
     public void Configure(EntityTypeBuilder<Exercise> builder)

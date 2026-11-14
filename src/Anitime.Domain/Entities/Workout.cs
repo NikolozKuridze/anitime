@@ -4,6 +4,7 @@ namespace Anitime.Domain.Entities;
 /// Curated workout collection (e.g. "Leg Day", "Push Day") mapping a full-length
 /// embeddable YouTube routine to a set of target muscles. Matching exercises are
 /// resolved from the <see cref="Exercise"/> catalog by those muscles at read time.
+/// <para>Retired, kept for data only: the Workouts feature was removed, but the table and its rows stay so it can come back.</para>
 /// </summary>
 public sealed class Workout : BaseEntity
 {

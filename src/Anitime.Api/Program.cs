@@ -114,9 +114,6 @@ if (app.Environment.IsProduction() &&
 using (var scope = app.Services.CreateScope())
 {
     await EnsureDatabaseReadyAsync(scope.ServiceProvider, app.Logger, app.Lifetime.ApplicationStopping);
-    var seedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await ExerciseCatalogSeeder.SeedAsync(seedDb, app.Environment.ContentRootPath, app.Logger, app.Lifetime.ApplicationStopping);
-    await WorkoutCatalogSeeder.SeedAsync(seedDb, app.Environment.ContentRootPath, app.Logger, app.Lifetime.ApplicationStopping);
 }
 
 app.UseForwardedHeaders();

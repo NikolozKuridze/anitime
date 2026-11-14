@@ -6,6 +6,9 @@ See git history for the full list. Tests: `dotnet test` (Docker required). The w
 ## Done (2026-11-14): performance pass
 Query-count budgets, timing benchmark, SQL aggregates for dashboard/analytics/calendar, list projections, ETag + compression, pooled DbContext, dashboard day-boundary cache fix, additive `tasks?from&to` and `notes?view=summary`, `scripts/seed-local.sh`. See PROJECT.md §10.
 
+## In progress (2026-11-14): Workouts removed on branch `remove-workouts`
+Endpoints, DTOs, mapping, seeders and their JSON, options and tests removed; entities/configurations/DbSets kept so the tables and data stay (no migration). **Do not merge into `master`** until the app version without the Workouts tab is live; the installed app still calls `/api/exercises` and `/api/workouts`. See PROJECT.md §7.
+
 ## Next (not started)
 - Cycle/period tracking (waits for the redesign). Fits as a per-user, per-day entity: `CycleDay` (`UserId`, `Date`, flow, symptoms, note) with a unique `(UserId, Date)` index, a `GET /api/cycle?from=&to=` range endpoint marked `[ConditionalGet]`, and optional per-day counts merged into `CalendarController`.
 
