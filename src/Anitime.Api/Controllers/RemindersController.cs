@@ -66,7 +66,7 @@ public sealed class RemindersController : BaseApiController
         {
             UserId = userId,
             Title = request.Title.Trim(),
-            Message = request.Message.Trim(),
+            Message = request.Message?.Trim() ?? string.Empty,
             ScheduledForUtc = request.ScheduledForUtc,
             RepeatDaily = request.RepeatDaily,
             IsEnabled = true,
@@ -124,7 +124,7 @@ public sealed class RemindersController : BaseApiController
         }
 
         reminder.Title = request.Title.Trim();
-        reminder.Message = request.Message.Trim();
+        reminder.Message = request.Message?.Trim() ?? string.Empty;
         reminder.ScheduledForUtc = request.ScheduledForUtc;
         reminder.RepeatDaily = request.RepeatDaily;
         reminder.IsEnabled = request.IsEnabled;
