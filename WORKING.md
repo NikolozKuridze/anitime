@@ -6,11 +6,13 @@ See git history for the full list. Tests: `dotnet test` (Docker required). The w
 ## Done (2026-11-14): performance pass
 Query-count budgets, timing benchmark, SQL aggregates for dashboard/analytics/calendar, list projections, ETag + compression, pooled DbContext, dashboard day-boundary cache fix, additive `tasks?from&to` and `notes?view=summary`, `scripts/seed-local.sh`. See PROJECT.md §10.
 
-## In progress (2026-11-14): Notes v2, phase P0, on branch `notes-v2`
-Strict note contracts, document version 2 with server validation and preview, old-client guard (`409 note_format_too_new`), `note_content_backups` (migration `AddNoteContentBackups`), `GET /api/app/config`. Not merged; deploy only together with or before the app build that writes v2. Set `MIN_IOS_BUILD` / `MIN_APP_VERSION` in the server `.env` when the owner wants to force updates. See PROJECT.md §10 "Notes v2".
-
-## In progress (2026-11-15): Notes P2/P3 on branch `notes-v2-p2` (from `notes-v2`)
-Folders, tags, smart folders, Recently Deleted + 30-day purge, edit-clash copies, image attachments + 7-day orphan cleanup, search, lock/paper/palette colours, backlinks, `iosStoreUrl` in app config. Migration `AddNotesOrganisation` (additive; no extensions; backfills `HasChecklist` and `SearchText`, sets lz4 on `SearchText` when available). Not merged. Set `IOS_STORE_URL` in the server `.env` when the App Store link exists. See PROJECT.md §10 "Notes P2/P3".
+## In progress (2026-11-15): branch `release-1` = everything for the next deploy
+- Notes v2 P0 (strict contracts, document version 2, old-client guard `409 note_format_too_new`, `note_content_backups`, `GET /api/app/config`). See PROJECT.md §10 "Notes v2".
+- Notes P2/P3 (folders, tags, smart folders, Recently Deleted + 30-day purge, edit-clash copies, image attachments + 7-day orphan cleanup, search without extensions, lock/paper/palette colours, backlinks, `iosStoreUrl`). See PROJECT.md §10 "Notes P2/P3".
+- Release 1 additions: task priority, checklist rename/delete, reminder PUT, profile photo removal with `hasProfileImage` / `hasBackgroundImage`.
+- Workouts removed (branch `remove-workouts` merged in): `/api/exercises*` and `/api/workouts*` are gone; the `exercises` / `workouts` tables and data are kept, unused. See PROJECT.md §7.
+- Migrations still to reach production, in order: `AddNoteContentBackups`, `AddNotesOrganisation`, `AddTaskPriority`. All additive; no extensions.
+- Server `.env` options: `MIN_IOS_BUILD`, `MIN_APP_VERSION`, `IOS_STORE_URL`.
 
 ## Next (not started)
 - Cycle/period tracking (waits for the redesign). Fits as a per-user, per-day entity: `CycleDay` (`UserId`, `Date`, flow, symptoms, note) with a unique `(UserId, Date)` index, a `GET /api/cycle?from=&to=` range endpoint marked `[ConditionalGet]`, and optional per-day counts merged into `CalendarController`.

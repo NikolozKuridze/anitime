@@ -25,6 +25,8 @@ public sealed class AppDbContext : DbContext
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<UserSettings> UserSettings => Set<UserSettings>();
+    // Retired, kept for data only: Workouts was removed from the product, but the tables and their rows stay
+    // (no drop migration) so the feature can come back. Nothing reads or writes them.
     public DbSet<Exercise> Exercises => Set<Exercise>();
     public DbSet<Workout> Workouts => Set<Workout>();
 

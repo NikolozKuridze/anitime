@@ -3,6 +3,7 @@ namespace Anitime.Domain.Entities;
 /// <summary>
 /// Reference catalog entry sourced from the public-domain Free Exercise DB
 /// (https://github.com/yuhonas/free-exercise-db, Unlicense). Global, not user-owned.
+/// <para>Retired, kept for data only: the Workouts feature was removed, but the table and its rows stay so it can come back.</para>
 /// </summary>
 public sealed class Exercise : BaseEntity
 {

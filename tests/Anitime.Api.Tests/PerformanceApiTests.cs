@@ -41,9 +41,7 @@ public sealed class PerformanceApiTests(ApiFixture fixture, ITestOutputHelper ou
         ["note tags"] = ("/api/notes/tags", 1),
         ["smart folders"] = ("/api/notes/smart-folders", 1),
         ["recently deleted"] = ("/api/notes/deleted", 1),
-        ["note search"] = ("/api/notes/search?q=ipsum%20dolor", 1),
-        ["exercises"] = ("/api/exercises?page=1&pageSize=20", 2),
-        ["workouts"] = ("/api/workouts", 1)
+        ["note search"] = ("/api/notes/search?q=ipsum%20dolor", 1)
     };
 
     public static TheoryData<string> HotEndpointNames() => new(HotEndpoints.Keys);
@@ -72,7 +70,6 @@ public sealed class PerformanceApiTests(ApiFixture fixture, ITestOutputHelper ou
         var cache = scope.ServiceProvider.GetRequiredService<IDistributedCache>();
         await cache.RemoveAsync(CacheKeys.Dashboard(userId));
         await cache.RemoveAsync(CacheKeys.Profile(userId));
-        await cache.RemoveAsync(CacheKeys.ExerciseFilters);
     }
 
     private async Task<QueryCounter.Scope> CountAsync(HttpClient client, Guid userId, string path)
