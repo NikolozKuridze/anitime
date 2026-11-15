@@ -133,6 +133,13 @@ public sealed class NoteLibraryController : BaseApiController
             note.FolderId = null;
         }
 
+        // A retry with this note's clientRequestId may have made a new note while it was deleted; that one keeps the id.
+        if (note.ClientRequestId is not null &&
+            await db.Notes.AnyAsync(n => n.UserId == userId && n.ClientRequestId == note.ClientRequestId, cancellationToken))
+        {
+            note.ClientRequestId = null;
+        }
+
         note.IsDeleted = false;
         note.DeletedAtUtc = null;
         note.VersionToken = NoteContentWriter.NewVersionToken();

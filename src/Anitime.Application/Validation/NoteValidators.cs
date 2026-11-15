@@ -42,6 +42,7 @@ public sealed class CreateNoteRequestValidator : AbstractValidator<CreateNoteReq
         RuleFor(x => x).Must(HasMeaningfulContent)
             .WithMessage(NoteValidationRules.EmptyNoteMessage);
         RuleFor(x => x.Title).MaximumLength(160);
+        RuleFor(x => x.ClientRequestId).MaximumLength(64);
         RuleFor(x => x.ContentJson).NotNull().SetValidator(new RichNoteDocumentValidator());
         RuleFor(x => x.FontFamily).MaximumLength(64);
         RuleFor(x => x.FontSize).InclusiveBetween(10, 48);

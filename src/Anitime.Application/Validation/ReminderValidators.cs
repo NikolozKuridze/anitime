@@ -9,6 +9,7 @@ public sealed class CreateReminderRequestValidator : AbstractValidator<CreateRem
     {
         RuleFor(x => x.Title).NotEmpty().MaximumLength(120);
         RuleFor(x => x.Message).NotEmpty().MaximumLength(1000);
+        RuleFor(x => x.ClientRequestId).MaximumLength(64);
         RuleFor(x => x.ScheduledForUtc)
             .Must(x => x > DateTime.UtcNow.AddMinutes(-1))
             .WithMessage("Reminder schedule must be in the future.");

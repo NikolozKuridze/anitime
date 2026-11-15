@@ -10,5 +10,8 @@ public sealed class Reminder : BaseEntity
     public bool IsEnabled { get; set; } = true;
     public DateTime? LastTriggeredAtUtc { get; set; } 
 
+    /// <summary>Set by the app on create so a retried request returns this reminder instead of making a second one.</summary>
+    public string? ClientRequestId { get; set; }
+
     public User User { get; set; } = default!;
 }

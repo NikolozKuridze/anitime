@@ -48,6 +48,13 @@ public sealed class RemindersController : BaseApiController
         [FromServices] IClock clock,
         CancellationToken cancellationToken)
     {
+        var userId = userContext.GetRequiredUserId();
+        var clientRequestId = ClientRequests.Normalize(request.ClientRequestId);
+        if (await FindByClientRequestAsync(db, userId, clientRequestId, cancellationToken) is { } existing)
+        {
+            return Ok(existing.ToResponse());
+        }
+
         var validationResponse = await ValidateAsync(request, validator, cancellationToken);
         if (validationResponse is not null)
         {
@@ -57,18 +64,33 @@ public sealed class RemindersController : BaseApiController
         var now = clock.UtcNow;
         var reminder = new Reminder
         {
-            UserId = userContext.GetRequiredUserId(),
+            UserId = userId,
             Title = request.Title.Trim(),
             Message = request.Message.Trim(),
             ScheduledForUtc = request.ScheduledForUtc,
             RepeatDaily = request.RepeatDaily,
             IsEnabled = true,
+            ClientRequestId = clientRequestId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
 
         db.Reminders.Add(reminder);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ClientRequests.IsDuplicate(ex, clientRequestId, "IX_reminders_UserId_ClientRequestId"))
+        {
+            var original = await FindByClientRequestAsync(db, userId, clientRequestId, cancellationToken);
+            if (original is not null)
+            {
+                return Ok(original.ToResponse());
+            }
+
+            throw;
+        }
+
         await cache.RemoveAsync(CacheKeys.Dashboard(reminder.UserId), cancellationToken);
 
         return FromCreatedResult($"/api/reminders/{reminder.Id}", Result<ReminderResponse>.Success(reminder.ToResponse()));
@@ -160,4 +182,11 @@ public sealed class RemindersController : BaseApiController
         await cache.RemoveAsync(CacheKeys.Dashboard(userId), cancellationToken);
         return NoContent();
     }
+
+    private static Task<Reminder?> FindByClientRequestAsync(AppDbContext db, Guid userId, string? clientRequestId, CancellationToken cancellationToken) =>
+        ClientRequests.CanLookUp(clientRequestId)
+            ? db.Reminders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.ClientRequestId == clientRequestId, cancellationToken)
+            : Task.FromResult<Reminder?>(null);
 }

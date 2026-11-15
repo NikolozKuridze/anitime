@@ -9,6 +9,8 @@ public sealed class HabitConfiguration : IEntityTypeConfiguration<Habit>
     public void Configure(EntityTypeBuilder<Habit> builder)
     {
         builder.ToTable("habits");
+        builder.Property(x => x.ClientRequestId).HasMaxLength(64);
+        builder.HasIndex(x => new { x.UserId, x.ClientRequestId }).IsUnique().HasFilter("\"IsDeleted\" = false");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Title).HasMaxLength(120).IsRequired();
         builder.Property(x => x.Emoji).HasMaxLength(16).IsRequired();

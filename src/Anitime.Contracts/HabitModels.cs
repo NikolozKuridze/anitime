@@ -1,6 +1,6 @@
 namespace Anitime.Contracts;
 
-public sealed record CreateHabitRequest(string Title, string Emoji, DateOnly? StartDate, int DurationDays);
+public sealed record CreateHabitRequest(string Title, string Emoji, DateOnly? StartDate, int DurationDays, string? ClientRequestId = null);
 
 public sealed record ToggleHabitEntryRequest(DateOnly? Date);
 

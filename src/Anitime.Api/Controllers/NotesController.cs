@@ -143,13 +143,19 @@ public sealed class NotesController : BaseApiController
         [FromServices] IClock clock,
         CancellationToken cancellationToken)
     {
+        var userId = userContext.GetRequiredUserId();
+        var clientRequestId = ClientRequests.Normalize(request.ClientRequestId);
+        if (await FindByClientRequestAsync(db, userId, clientRequestId, cancellationToken) is { } existing)
+        {
+            return Ok(NoteMappings.ToResponse(existing));
+        }
+
         var validationResponse = await ValidateAsync(request, validator, cancellationToken);
         if (validationResponse is not null)
         {
             return validationResponse;
         }
 
-        var userId = userContext.GetRequiredUserId();
         var content = NoteContentWriter.Prepare(request.ContentJson, request.PlainTextPreview);
         var error = content.Error
             ?? await NoteQueries.CheckFolderAsync(db, userId, request.FolderId, cancellationToken)
@@ -177,6 +183,7 @@ public sealed class NotesController : BaseApiController
             IsLocked = request.IsLocked ?? false,
             PaperStyle = request.PaperStyle ?? NotePaperStyles.Plain,
             ExplicitTags = NoteContentWriter.NormalizeTags(request.Tags ?? []),
+            ClientRequestId = clientRequestId,
             VersionToken = NoteContentWriter.NewVersionToken(),
             LastEditedAtUtc = now,
             CreatedAtUtc = now,
@@ -185,7 +192,20 @@ public sealed class NotesController : BaseApiController
         NoteContentWriter.ApplyFacts(note, content.Facts);
 
         db.Notes.Add(note);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ClientRequests.IsDuplicate(ex, clientRequestId, "IX_notes_UserId_ClientRequestId"))
+        {
+            var original = await FindByClientRequestAsync(db, userId, clientRequestId, cancellationToken);
+            if (original is not null)
+            {
+                return Ok(NoteMappings.ToResponse(original));
+            }
+
+            throw;
+        }
 
         return FromCreatedResult($"/api/notes/{note.Id}", Result<NoteResponse>.Success(NoteMappings.ToResponse(note)));
     }
@@ -400,4 +420,11 @@ public sealed class NotesController : BaseApiController
 
         return NoteContentWriter.CutToLength(title, NoteContentWriter.MaxTitleLength - CopySuffix.Length) + CopySuffix;
     }
+
+    private static Task<Note?> FindByClientRequestAsync(AppDbContext db, Guid userId, string? clientRequestId, CancellationToken cancellationToken) =>
+        ClientRequests.CanLookUp(clientRequestId)
+            ? db.Notes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.ClientRequestId == clientRequestId, cancellationToken)
+            : Task.FromResult<Note?>(null);
 }

@@ -57,7 +57,8 @@ public sealed record CreateNoteRequest(
     Guid? FolderId = null,
     bool? IsLocked = null,
     string? PaperStyle = null,
-    IReadOnlyList<string>? Tags = null);
+    IReadOnlyList<string>? Tags = null,
+    string? ClientRequestId = null);
 
 /// <param name="ContentJson">When omitted together with PlainTextPreview, the stored content is kept (metadata-only update).</param>
 /// <param name="IsLocked">Omitted or null keeps the stored value (installed app builds don't send it). The same goes for PaperStyle and Tags.</param>

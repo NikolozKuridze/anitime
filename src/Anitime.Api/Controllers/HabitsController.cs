@@ -65,6 +65,14 @@ public sealed class HabitsController : BaseApiController
         [FromServices] IClock clock,
         CancellationToken cancellationToken)
     {
+        var userId = userContext.GetRequiredUserId();
+        var today = ClientDateResolver.ResolveToday(Request, clock);
+        var clientRequestId = ClientRequests.Normalize(request.ClientRequestId);
+        if (await FindByClientRequestAsync(db, userId, clientRequestId, cancellationToken) is { } existing)
+        {
+            return Ok(existing.ToResponse(today));
+        }
+
         var validationResponse = await ValidateAsync(request, validator, cancellationToken);
         if (validationResponse is not null)
         {
@@ -72,20 +80,34 @@ public sealed class HabitsController : BaseApiController
         }
 
         var now = clock.UtcNow;
-        var today = ClientDateResolver.ResolveToday(Request, clock);
         var entity = new Habit
         {
-            UserId = userContext.GetRequiredUserId(),
+            UserId = userId,
             Title = request.Title.Trim(),
             Emoji = string.IsNullOrWhiteSpace(request.Emoji) ? "🔥" : request.Emoji.Trim(),
             StartDate = request.StartDate ?? today,
             DurationDays = request.DurationDays,
+            ClientRequestId = clientRequestId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
 
         db.Habits.Add(entity);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ClientRequests.IsDuplicate(ex, clientRequestId, "IX_habits_UserId_ClientRequestId"))
+        {
+            var original = await FindByClientRequestAsync(db, userId, clientRequestId, cancellationToken);
+            if (original is not null)
+            {
+                return Ok(original.ToResponse(today));
+            }
+
+            throw;
+        }
+
         await cache.RemoveAsync(CacheKeys.Dashboard(entity.UserId), cancellationToken);
 
         return FromCreatedResult($"/api/habits/{entity.Id}", Result<HabitResponse>.Success(entity.ToResponse(today)));
@@ -194,4 +216,12 @@ public sealed class HabitsController : BaseApiController
         await cache.RemoveAsync(CacheKeys.Dashboard(userId), cancellationToken);
         return NoContent();
     }
+
+    private static Task<Habit?> FindByClientRequestAsync(AppDbContext db, Guid userId, string? clientRequestId, CancellationToken cancellationToken) =>
+        ClientRequests.CanLookUp(clientRequestId)
+            ? db.Habits
+                .AsNoTracking()
+                .Include(x => x.Entries.OrderBy(e => e.Date))
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.ClientRequestId == clientRequestId, cancellationToken)
+            : Task.FromResult<Habit?>(null);
 }

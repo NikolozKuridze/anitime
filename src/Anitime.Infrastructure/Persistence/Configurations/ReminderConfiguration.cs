@@ -9,6 +9,8 @@ public sealed class ReminderConfiguration : IEntityTypeConfiguration<Reminder>
     public void Configure(EntityTypeBuilder<Reminder> builder)
     {
         builder.ToTable("reminders");
+        builder.Property(x => x.ClientRequestId).HasMaxLength(64);
+        builder.HasIndex(x => new { x.UserId, x.ClientRequestId }).IsUnique().HasFilter("\"IsDeleted\" = false");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Title).HasMaxLength(120).IsRequired();
         builder.Property(x => x.Message).HasMaxLength(1000).IsRequired();

@@ -43,6 +43,10 @@ public sealed class Note : BaseEntity
     /// A locked note holds only its title, so its text never shows up in search. Kept current by AppDbContext on save.
     /// </summary>
     public string SearchText { get; set; } = string.Empty;
+
+    /// <summary>Set by the app on create so a retried request returns this note instead of making a second one.</summary>
+    public string? ClientRequestId { get; set; }
+
     public User User { get; set; } = default!;
 
     public static string BuildSearchText(string title, string plainTextPreview, bool isLocked) =>

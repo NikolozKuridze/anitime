@@ -9,6 +9,8 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
     public void Configure(EntityTypeBuilder<Note> builder)
     {
         builder.ToTable("notes");
+        builder.Property(x => x.ClientRequestId).HasMaxLength(64);
+        builder.HasIndex(x => new { x.UserId, x.ClientRequestId }).IsUnique().HasFilter("\"IsDeleted\" = false");
 
         builder.Property(x => x.Title).HasMaxLength(160).IsRequired();
         builder.Property(x => x.ContentJson).HasColumnType("jsonb").IsRequired();

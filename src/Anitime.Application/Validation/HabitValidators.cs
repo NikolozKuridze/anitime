@@ -10,6 +10,7 @@ public sealed class CreateHabitRequestValidator : AbstractValidator<CreateHabitR
         RuleFor(x => x.Title).NotEmpty().MaximumLength(120);
         RuleFor(x => x.Emoji).MaximumLength(16);
         RuleFor(x => x.DurationDays).InclusiveBetween(1, 365);
+        RuleFor(x => x.ClientRequestId).MaximumLength(64);
         RuleFor(x => x.StartDate)
             .Must(x => x is null || x.Value >= DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-1))
             .WithMessage("Start date cannot be older than 1 year.");
