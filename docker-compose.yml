@@ -101,13 +101,14 @@ services:
       - "127.0.0.1:5673:5672"
       - "127.0.0.1:15673:15672"
     healthcheck:
-      # Each check boots a full Erlang VM (seconds of CPU). Every 5s they overlapped and kept the broker at
-      # 400-700% CPU; every 30s is enough for depends_on and costs a fraction of that.
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 30s
+      # A port check, not rabbitmq-diagnostics: each diagnostics run boots a full Erlang VM (~11 CPU-seconds), and
+      # every 5s those runs overlapped and held the broker at 400-700% CPU. RabbitMQ opens 5672 only once it is
+      # ready for clients, which is what api and worker wait for.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5672 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
