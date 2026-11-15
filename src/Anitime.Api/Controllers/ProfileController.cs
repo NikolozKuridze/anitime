@@ -178,6 +178,74 @@ public sealed class ProfileController : BaseApiController
         return NoContent();
     }
 
+    /// <summary>Removes the profile photo; afterwards GET profile-image is 404 and the profile says hasProfileImage: false.</summary>
+    [HttpDelete("profile-image")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public Task<IActionResult> DeleteProfileImage(
+        [FromServices] AppDbContext db,
+        [FromServices] IUserContext userContext,
+        [FromServices] IFileStorageService fileStorageService,
+        [FromServices] IDistributedCache cache,
+        [FromServices] IClock clock,
+        [FromServices] ILogger<ProfileController> logger,
+        CancellationToken cancellationToken) =>
+        RemoveImageAsync(db, userContext, fileStorageService, cache, clock, logger, background: false, cancellationToken);
+
+    /// <summary>Removes the background photo; afterwards GET background-image is 404 and the profile says hasBackgroundImage: false.</summary>
+    [HttpDelete("background-image")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public Task<IActionResult> DeleteBackgroundImage(
+        [FromServices] AppDbContext db,
+        [FromServices] IUserContext userContext,
+        [FromServices] IFileStorageService fileStorageService,
+        [FromServices] IDistributedCache cache,
+        [FromServices] IClock clock,
+        [FromServices] ILogger<ProfileController> logger,
+        CancellationToken cancellationToken) =>
+        RemoveImageAsync(db, userContext, fileStorageService, cache, clock, logger, background: true, cancellationToken);
+
+    // Idempotent: removing a photo that isn't there is still 204.
+    private async Task<IActionResult> RemoveImageAsync(
+        AppDbContext db,
+        IUserContext userContext,
+        IFileStorageService fileStorageService,
+        IDistributedCache cache,
+        IClock clock,
+        ILogger logger,
+        bool background,
+        CancellationToken cancellationToken)
+    {
+        var userId = userContext.GetRequiredUserId();
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            return FromResult(Result.Failure(AppErrors.NotFound("User profile was not found.")));
+        }
+
+        var objectName = background ? user.BackgroundImageObjectName : user.ProfileImageObjectName;
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return NoContent();
+        }
+
+        if (background)
+        {
+            user.BackgroundImageObjectName = null;
+            user.BackgroundImageContentType = null;
+        }
+        else
+        {
+            user.ProfileImageObjectName = null;
+            user.ProfileImageContentType = null;
+        }
+
+        user.UpdatedAtUtc = clock.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        await DeletePreviousImageAsync(fileStorageService, objectName, logger, cancellationToken);
+        await cache.RemoveAsync(CacheKeys.Profile(userId), cancellationToken);
+        return NoContent();
+    }
+
     [HttpPost("profile-image")]
     [RequestSizeLimit(ApiMappings.MaxImageRequestBytes)]
     [RejectOversizedImageRequest]

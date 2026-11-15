@@ -37,7 +37,10 @@ public static class ApiMappings
             task.ChecklistItems
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new ChecklistItemResponse(x.Id, x.Title, x.IsDone))
-                .ToList());
+                .ToList(),
+            // Both names: the installed app reads "priority"; "priorityLabel" matches its type name.
+            task.Priority.ToString(),
+            task.Priority.ToString());
 
     public static ReminderResponse ToResponse(this Reminder reminder) =>
         new(
@@ -67,7 +70,9 @@ public static class ApiMappings
                 settings.BackgroundSecondaryColor,
                 settings.AccentColor,
                 settings.Locale,
-                settings.TimeZone));
+                settings.TimeZone),
+            !string.IsNullOrWhiteSpace(user.ProfileImageObjectName),
+            !string.IsNullOrWhiteSpace(user.BackgroundImageObjectName));
     }
 
     public static ExerciseSummaryResponse ToSummaryResponse(this Exercise exercise, string imageBaseUrl) =>

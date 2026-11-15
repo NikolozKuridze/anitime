@@ -723,6 +723,11 @@ namespace Anitime.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(120)

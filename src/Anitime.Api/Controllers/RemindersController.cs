@@ -74,6 +74,45 @@ public sealed class RemindersController : BaseApiController
         return FromCreatedResult($"/api/reminders/{reminder.Id}", Result<ReminderResponse>.Success(reminder.ToResponse()));
     }
 
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(ReminderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateReminderRequest request,
+        [FromServices] IValidator<UpdateReminderRequest> validator,
+        [FromServices] AppDbContext db,
+        [FromServices] IUserContext userContext,
+        [FromServices] IDistributedCache cache,
+        [FromServices] IClock clock,
+        CancellationToken cancellationToken)
+    {
+        var validationResponse = await ValidateAsync(request, validator, cancellationToken);
+        if (validationResponse is not null)
+        {
+            return validationResponse;
+        }
+
+        var userId = userContext.GetRequiredUserId();
+        var reminder = await db.Reminders.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+        if (reminder is null)
+        {
+            return FromResult(Result<ReminderResponse>.Failure(AppErrors.NotFound("Reminder was not found.")));
+        }
+
+        reminder.Title = request.Title.Trim();
+        reminder.Message = request.Message.Trim();
+        reminder.ScheduledForUtc = request.ScheduledForUtc;
+        reminder.RepeatDaily = request.RepeatDaily;
+        reminder.IsEnabled = request.IsEnabled;
+        reminder.UpdatedAtUtc = clock.UtcNow;
+
+        await db.SaveChangesAsync(cancellationToken);
+        await cache.RemoveAsync(CacheKeys.Dashboard(userId), cancellationToken);
+        return FromResult(Result<ReminderResponse>.Success(reminder.ToResponse()));
+    }
+
     [HttpPost("{id:guid}/toggle")]
     [ProducesResponseType(typeof(ReminderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]

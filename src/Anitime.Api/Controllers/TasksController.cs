@@ -3,6 +3,8 @@ using Anitime.Api.Mapping;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Caching;
 using Anitime.Application.Common;
+using Anitime.Application.Validation;
+using Anitime.Domain.Enums;
 using Anitime.Contracts;
 using Anitime.Domain.Entities;
 using Anitime.Infrastructure.Persistence;
@@ -59,6 +61,7 @@ public sealed class TasksController : BaseApiController
                 Emoji = x.Emoji,
                 Date = x.Date,
                 IsCompleted = x.IsCompleted,
+                Priority = x.Priority,
                 ChecklistItems = x.ChecklistItems
                     .OrderBy(i => i.CreatedAtUtc)
                     .Select(i => new ChecklistItem { Id = i.Id, Title = i.Title, IsDone = i.IsDone, CreatedAtUtc = i.CreatedAtUtc })
@@ -122,6 +125,7 @@ public sealed class TasksController : BaseApiController
             Emoji = normalizedEmoji,
             ClientRequestId = normalizedClientRequestId,
             Date = request.Date,
+            Priority = TaskPriorities.Parse(request.Priority) ?? TaskPriority.Medium,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
@@ -200,6 +204,7 @@ public sealed class TasksController : BaseApiController
         task.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         task.Emoji = string.IsNullOrWhiteSpace(request.Emoji) ? "📝" : request.Emoji.Trim();
         task.Date = request.Date;
+        task.Priority = TaskPriorities.Parse(request.Priority) ?? task.Priority;
         task.UpdatedAtUtc = clock.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
@@ -313,6 +318,67 @@ public sealed class TasksController : BaseApiController
         await db.SaveChangesAsync(cancellationToken);
         return FromResult(Result<ChecklistItemResponse>.Success(new ChecklistItemResponse(item.Id, item.Title, item.IsDone)));
     }
+
+    [HttpPut("{taskId:guid}/checklist/{itemId:guid}")]
+    [ProducesResponseType(typeof(ChecklistItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RenameChecklistItem(
+        Guid taskId,
+        Guid itemId,
+        [FromBody] ChecklistItemRequest request,
+        [FromServices] IValidator<ChecklistItemRequest> validator,
+        [FromServices] AppDbContext db,
+        [FromServices] IUserContext userContext,
+        [FromServices] IClock clock,
+        CancellationToken cancellationToken)
+    {
+        var validationResponse = await ValidateAsync(request, validator, cancellationToken);
+        if (validationResponse is not null)
+        {
+            return validationResponse;
+        }
+
+        var item = await FindChecklistItemAsync(db, userContext.GetRequiredUserId(), taskId, itemId, cancellationToken);
+        if (item is null)
+        {
+            return FromResult(Result<ChecklistItemResponse>.Failure(AppErrors.NotFound("Checklist item was not found.")));
+        }
+
+        item.Title = request.Title.Trim();
+        item.UpdatedAtUtc = clock.UtcNow;
+        item.TaskItem.UpdatedAtUtc = clock.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        return FromResult(Result<ChecklistItemResponse>.Success(new ChecklistItemResponse(item.Id, item.Title, item.IsDone)));
+    }
+
+    [HttpDelete("{taskId:guid}/checklist/{itemId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteChecklistItem(
+        Guid taskId,
+        Guid itemId,
+        [FromServices] AppDbContext db,
+        [FromServices] IUserContext userContext,
+        [FromServices] IClock clock,
+        CancellationToken cancellationToken)
+    {
+        var item = await FindChecklistItemAsync(db, userContext.GetRequiredUserId(), taskId, itemId, cancellationToken);
+        if (item is null)
+        {
+            return FromResult(Result.Failure(AppErrors.NotFound("Checklist item was not found.")));
+        }
+
+        item.TaskItem.UpdatedAtUtc = clock.UtcNow;
+        db.ChecklistItems.Remove(item);
+        await db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    private static Task<ChecklistItem?> FindChecklistItemAsync(AppDbContext db, Guid userId, Guid taskId, Guid itemId, CancellationToken cancellationToken) =>
+        db.ChecklistItems
+            .Include(x => x.TaskItem)
+            .FirstOrDefaultAsync(x => x.Id == itemId && x.TaskItemId == taskId && x.TaskItem.UserId == userId, cancellationToken);
 
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(DeleteTaskResponse), StatusCodes.Status200OK)]

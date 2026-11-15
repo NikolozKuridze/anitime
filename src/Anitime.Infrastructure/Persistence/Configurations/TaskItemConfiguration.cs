@@ -8,6 +8,9 @@ public sealed class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
 {
     public void Configure(EntityTypeBuilder<TaskItem> builder)
     {
+        // Stored by name. No EF default value: Low (0) is the CLR default, so EF would treat it as "unset";
+        // the database default for existing rows ("Medium") is set in migration AddTaskPriority.
+        builder.Property(x => x.Priority).HasConversion<string>().HasMaxLength(8).IsRequired();
         builder.ToTable("tasks");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Title).HasMaxLength(120).IsRequired();

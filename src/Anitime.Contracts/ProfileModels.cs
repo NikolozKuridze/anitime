@@ -29,4 +29,6 @@ public sealed record UserProfileResponse(
     int? Age,
     string? ProfileImageUrl,
     string? BackgroundImageUrl,
-    UserSettingsResponse Settings);
+    UserSettingsResponse Settings,
+    bool HasProfileImage,
+    bool HasBackgroundImage);

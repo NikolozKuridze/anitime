@@ -1,3 +1,4 @@
+using Anitime.Domain.Enums;
 using Anitime.Contracts;
 using FluentValidation;
 
@@ -19,6 +20,7 @@ public sealed class CreateTaskRequestValidator : AbstractValidator<CreateTaskReq
         RuleFor(x => x.Description).MaximumLength(2000);
         RuleFor(x => x.Emoji).MaximumLength(16);
         RuleFor(x => x.ClientRequestId).MaximumLength(64);
+        RuleFor(x => x.Priority).Must(TaskPriorities.IsValid!).WithMessage(TaskPriorities.Message).When(x => x.Priority is not null);
         RuleFor(x => x.ChecklistItems).Must(x => x is null || x.Count <= 20)
             .WithMessage("A task can contain at most 20 checklist items.");
         RuleForEach(x => x.ChecklistItems!).SetValidator(new ChecklistItemRequestValidator())
@@ -33,5 +35,19 @@ public sealed class UpdateTaskRequestValidator : AbstractValidator<UpdateTaskReq
         RuleFor(x => x.Title).NotEmpty().MaximumLength(120);
         RuleFor(x => x.Description).MaximumLength(2000);
         RuleFor(x => x.Emoji).MaximumLength(16);
+        RuleFor(x => x.Priority).Must(TaskPriorities.IsValid!).WithMessage(TaskPriorities.Message).When(x => x.Priority is not null);
     }
+}
+
+public static class TaskPriorities
+{
+    public const string Message = "Priority must be Low, Medium or High.";
+
+    public static bool IsValid(string value) => Parse(value) is not null;
+
+    /// <summary>Names only, any case; numbers are refused so "1" can't silently mean Medium.</summary>
+    public static TaskPriority? Parse(string? value) =>
+        Enum.GetNames<TaskPriority>().FirstOrDefault(name => string.Equals(name, value?.Trim(), StringComparison.OrdinalIgnoreCase)) is { } name
+            ? Enum.Parse<TaskPriority>(name)
+            : null;
 }
