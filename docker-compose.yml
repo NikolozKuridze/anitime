@@ -101,11 +101,13 @@ services:
       - "127.0.0.1:5673:5672"
       - "127.0.0.1:15673:15672"
     healthcheck:
+      # Each check boots a full Erlang VM (seconds of CPU). Every 5s they overlapped and kept the broker at
+      # 400-700% CPU; every 30s is enough for depends_on and costs a fraction of that.
       test: ["CMD", "rabbitmq-diagnostics", "check_running"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
