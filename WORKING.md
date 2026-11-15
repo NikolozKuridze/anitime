@@ -10,8 +10,8 @@ Query-count budgets, timing benchmark, SQL aggregates for dashboard/analytics/ca
 - Notes v2 P0 (strict contracts, document version 2, old-client guard `409 note_format_too_new`, `note_content_backups`, `GET /api/app/config`). See PROJECT.md §10 "Notes v2".
 - Notes P2/P3 (folders, tags, smart folders, Recently Deleted + 30-day purge, edit-clash copies, image attachments + 7-day orphan cleanup, search without extensions, lock/paper/palette colours, backlinks, `iosStoreUrl`). See PROJECT.md §10 "Notes P2/P3".
 - Release 1 additions: task priority, checklist rename/delete, reminder PUT, profile photo removal with `hasProfileImage` / `hasBackgroundImage`.
-- Workouts removed (branch `remove-workouts` merged in): `/api/exercises*` and `/api/workouts*` are gone; the `exercises` / `workouts` tables and data are kept, unused. See PROJECT.md §7.
-- Migrations still to reach production, in order: `AddNoteContentBackups`, `AddNotesOrganisation`, `AddTaskPriority`. All additive; no extensions.
+- Workouts removed: `/api/exercises*` and `/api/workouts*` are gone, and migration `DropWorkoutTables` drops the `exercises` / `workouts` tables (owner approved 2026-11-15, no backup needed). See PROJECT.md §7.
+- Migrations still to reach production, in order: `AddNoteContentBackups`, `AddNotesOrganisation`, `AddTaskPriority`, `DropWorkoutTables` (drops the two Workouts tables; the rest are additive). No extensions.
 - Server `.env` options: `MIN_IOS_BUILD`, `MIN_APP_VERSION`, `IOS_STORE_URL`.
 
 ## Next (not started)

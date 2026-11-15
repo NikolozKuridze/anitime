@@ -16,7 +16,7 @@ A mobile-first backend (JWT, CORS for Capacitor/Ionic clients) covering:
 - **Notes** — rich-text notes. Document version 1 (`blocks`, legacy) and version 2 (ProseMirror-shaped `content`, allow-listed by `Application/Rules/RichNoteV2Schema.cs`). See §10 "Notes v2".
 - **Reminders** — scheduled reminders → RabbitMQ event → push notification pipeline.
 - **Calendar / Dashboard / Analytics** — month view, aggregate counts, streak analytics (Redis-cached).
-- **Workouts** — *retired* (branch `remove-workouts`). See §7.
+- **Workouts** — removed (tables dropped). See §7.
 
 ---
 
@@ -95,11 +95,9 @@ Anitime.sln
 
 ---
 
-## 7. Workouts (retired)
+## 7. Workouts (removed)
 
-The exercise library (`/api/exercises*`) and workout collections (`/api/workouts*`) were removed from the product: controllers, DTOs, mapping, YouTube URL helpers, the `exercises:filters` cache key, the catalog seeders and their JSON snapshots, and `ExerciseLibraryOptions`.
-
-**Kept for data only:** the `Exercise`/`Workout` entities, their EF configurations and DbSets, so the `exercises` and `workouts` tables and their seeded rows stay as they are and EF generates no drop migration. To bring the feature back, restore the removed files from git history (commit before the removal on `remove-workouts`).
+The exercise library (`/api/exercises*`) and workout collections (`/api/workouts*`) were removed from the product, with their code, seed data and options. With the owner's approval (2026-11-15), migration `DropWorkoutTables` dropped the `exercises` and `workouts` tables and their data. To bring the feature back, restore the code from git history (before commit c0aadb3) and add a new migration.
 
 ---
 
