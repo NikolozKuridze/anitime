@@ -4,6 +4,7 @@ using Anitime.Api.Mapping;
 using Anitime.Application.Abstractions;
 using Anitime.Application.Caching;
 using Anitime.Application.Common;
+using Anitime.Application.Validation;
 using Anitime.Contracts;
 using Anitime.Domain.Entities;
 using Anitime.Domain.Enums;
@@ -165,9 +166,15 @@ public sealed class ProfileController : BaseApiController
 
         var userId = userContext.GetRequiredUserId();
         var settings = await GetOrCreateUserSettingsAsync(db, userId, clock.UtcNow, cancellationToken);
+        var (primaryColor, secondaryColor) = UserSettingsRules.ResolveColors(
+            request.BackgroundStyleType,
+            request.BackgroundPrimaryColor,
+            request.BackgroundSecondaryColor,
+            settings.BackgroundPrimaryColor,
+            settings.BackgroundSecondaryColor);
         settings.BackgroundStyleType = request.BackgroundStyleType;
-        settings.BackgroundPrimaryColor = request.BackgroundPrimaryColor?.Trim();
-        settings.BackgroundSecondaryColor = request.BackgroundSecondaryColor?.Trim();
+        settings.BackgroundPrimaryColor = primaryColor;
+        settings.BackgroundSecondaryColor = secondaryColor;
         settings.AccentColor = request.AccentColor?.Trim();
         settings.Locale = request.Locale?.Trim();
         settings.TimeZone = request.TimeZone?.Trim();

@@ -30,15 +30,36 @@ public sealed class UpdateUserSettingsRequestValidator : AbstractValidator<Updat
         RuleFor(x => x.Locale).MaximumLength(16);
         RuleFor(x => x.TimeZone).MaximumLength(64);
 
-        When(x => x.BackgroundStyleType == BackgroundStyleType.Solid, () =>
-        {
-            RuleFor(x => x.BackgroundPrimaryColor).NotEmpty();
-        });
-
-        When(x => x.BackgroundStyleType == BackgroundStyleType.Gradient, () =>
-        {
-            RuleFor(x => x.BackgroundPrimaryColor).NotEmpty();
-            RuleFor(x => x.BackgroundSecondaryColor).NotEmpty();
-        });
     }
+}
+
+/// <summary>
+/// Solid and Gradient need colours. A request without them (the app switching style before a colour pair is
+/// picked) is not refused: the missing colours fall back to the stored ones, then to the default pair.
+/// </summary>
+public static class UserSettingsRules
+{
+    public const string DefaultPrimaryColor = "#FDE2EC";
+    public const string DefaultSecondaryColor = "#F9D5E5";
+
+    public static (string? Primary, string? Secondary) ResolveColors(
+        BackgroundStyleType style, string? requestedPrimary, string? requestedSecondary, string? storedPrimary, string? storedSecondary)
+    {
+        var primary = Clean(requestedPrimary);
+        var secondary = Clean(requestedSecondary);
+        if (style is not (BackgroundStyleType.Solid or BackgroundStyleType.Gradient))
+        {
+            return (primary, secondary);
+        }
+
+        primary ??= Clean(storedPrimary) ?? DefaultPrimaryColor;
+        if (style == BackgroundStyleType.Gradient)
+        {
+            secondary ??= Clean(storedSecondary) ?? (primary == DefaultPrimaryColor ? DefaultSecondaryColor : primary);
+        }
+
+        return (primary, secondary);
+    }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
